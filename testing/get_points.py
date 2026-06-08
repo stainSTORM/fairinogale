@@ -16,7 +16,7 @@ from Robot import RPC
 # Konfiguration
 # ---------------------------------------------------------
 ROBOT_IP = "192.168.1.2"   # IP-Adresse des Roboters
-OUTPUT_FILE = "teach_points.json"
+OUTPUT_FILE = "./control-points/teach_points.json"
 
 # Roboterobjekt erstellen
 rbt = RPC(ROBOT_IP)
@@ -66,11 +66,12 @@ def shutdown_robot():
 # Hauptprogramm
 # ---------------------------------------------------------
 if __name__ == "__main__":
+    OUTPUT_FILE = "./control-points/back-to-pickup-station.json"
     init_robot()
 
     # Liste der Punktnamen anpassen → musst du vorher im Teach-Interface sehen
-    teach_point_names = ["home", "start", "move1", "move2", "move3", "move4", "move5", "move6", "move7", "move8", "move9", "move10", "release", "collect"]
+    teach_point_names = ["home", "pickup-station_7",  "pickup-station_6", "pickup-station_5", "pickup-station_5_take-out", "pickup-station_4_close-gripper", "pickup-station_4_hovering", "pickup-station_4_hovering", "pickup-station_3_open-gripper", "pickup-station_3", "pickup-station_2", "pickup-station_1"]
 
     save_teach_points(OUTPUT_FILE, teach_point_names)
     time.sleep(2)
-    shutdown_robot()
+    # shutdown_robot()

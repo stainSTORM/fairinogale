@@ -310,7 +310,7 @@ def shutdown_robot():
 
 
 def pick_up_pickupstation(speed: int = 10, acceleration: int = 10, dangerSpeed: int =10):
-    points = load_teach_points("pickup-pickup-station.json")
+    points = load_teach_points("./control-points/pickup-pickup-station.json")
 
     try:
         for idx, (point_name, values) in enumerate(points.items()):
@@ -396,29 +396,25 @@ def pick_up_microscope(speed: int = 10, acceleration: int = 10, dangerSpeed: int
         return False
 
 def release_item_pickupstation(speed: int = 10, acceleration: int = 10, dangerSpeed: int =10):
-    points = load_teach_points("release_pickupstation.json")
-
+    points = load_teach_points("./control-points/release-at-pickup-station.json")
 
     try:
         for idx, (point_name, values) in enumerate(points.items()):
             coords = [float(x) for x in values[6:12]]
             coordsLine = [float(x) for x in values[0:6]]
             
-            if idx<=1:
+            if point_name.lower().endswith("open-gripper"):
+                # errorDrive = rbt.MoveL(coordsLine, tool=1, user=1, vel=dangerSpeed, acc=acceleration)
                 errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=speed, acc=acceleration)
-            elif idx==4:
                 open_gripper()
-                #errorDrive = rbt.MoveL(coordsLine, tool=1, user=1, vel=speed, acc=acceleration)
+            elif point_name.lower().endswith("close-gripper"):
+                # errorDrive = rbt.MoveL(coordsLine, tool=1, user=1, vel=dangerSpeed, acc=acceleration)
                 errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=speed, acc=acceleration)
-            elif idx==2:
-                #errorDrive = rbt.MoveL(coordsLine, tool=1, user=1, vel=dangerSpeed, acc=acceleration)
+                close_gripper()
+            else:
+                # errorDrive = rbt.MoveL(coordsLine, tool=1, user=1, vel=speed, acc=acceleration)
                 errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=speed, acc=acceleration)
-            elif idx==3:
-                #errorDrive = rbt.MoveL(coordsLine, tool=1, user=1, vel=dangerSpeed, acc=acceleration)
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=speed, acc=acceleration)
-            else:    
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=speed, acc=acceleration)
-            
+
             print(f"Point '{point_name}' reached. Return value: {errorDrive}")
             
         return True
@@ -432,11 +428,13 @@ def release_item_pickupstation(speed: int = 10, acceleration: int = 10, dangerSp
 # ---------------------------------------------------------
 if __name__ == "__main__":
     # initialize the robot and gripper
-    init_robot()
-    init_gripper()
+    # init_robot()
+    # init_gripper()
 
-    pick_up_pickupstation(40, 70, 10)
-    # release_item_pickupstation(50, 70, 10)
+    # open_gripper()
+    # close_gripper()
+    # pick_up_pickupstation(40, 70, 10)
+    release_item_pickupstation(50, 70, 10)
     # pick_up_item_opentrons(10, 70, 10)
     # release_item_opentrons(10, 70, 10)
     # release_item_microscope(100, 70, 5)
