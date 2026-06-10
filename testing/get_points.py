@@ -66,11 +66,12 @@ def shutdown_robot():
 # Hauptprogramm
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    OUTPUT_FILE = "./control-points/back-to-pickup-station.json"
+    OUTPUT_FILE = "./control-points/pick_up_frame2.json"
     init_robot()
 
     # Liste der Punktnamen anpassen → musst du vorher im Teach-Interface sehen
-    teach_point_names = ["home", "pickup-station_7",  "pickup-station_6", "pickup-station_5", "pickup-station_5_take-out", "pickup-station_4_close-gripper", "pickup-station_4_hovering", "pickup-station_4_hovering", "pickup-station_3_open-gripper", "pickup-station_3", "pickup-station_2", "pickup-station_1"]
+    # teach_point_names = ["home", "frame_1", "frame_2", "frame_3", "frame_4", "frame_5_hovering_danger", "frame_6_close-gripper"]
+    teach_point_names = ["frame_4.5_open-gripper"]
 
     save_teach_points(OUTPUT_FILE, teach_point_names)
     time.sleep(2)
