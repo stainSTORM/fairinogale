@@ -139,7 +139,7 @@ def execute_pick_up_movement(points: dict, speed: int=50, danger_speed: int=10, 
 
     try:
         for idx, (point_name, values) in enumerate(points.items()):
-            coords = [float(x) for x in values[:12]]
+            coords = [float(x) for x in values[6:12]]
             coordsLine = [float(x) for x in values[0:6]]
             move_speed = speed
 
