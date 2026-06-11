@@ -146,7 +146,7 @@ def init_gripper(openingWidth: int = 95):
         error = rbt.ActGripper(jawnumber, 1)
         print("Activate gripper ", error)
         time.sleep(2)
-        errorGripper = rbt.MoveGripper(
+        rbt.MoveGripper(
             jawnumber, openingWidth, 30, 30, 10000, 0, 0, 0, 0, 0
         )
     except Exception as e:
@@ -334,7 +334,7 @@ def init_robot_and_gripper():
 
 
 @register()
-def open_gripper():
+def open_grip():
     """Open the gripper."""
     if not init():
         print("Robot not initialized. Exiting.")
@@ -347,7 +347,7 @@ def open_gripper():
 
 
 @register()
-def close_gripper():
+def close_grip():
     """Close the gripper."""
     if not init():
         print("Robot not initialized. Exiting.")
