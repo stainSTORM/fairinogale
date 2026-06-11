@@ -199,20 +199,22 @@ def execute_pick_up_movement(points: dict, speed: int=50, danger_speed: int=10, 
         for idx, (point_name, values) in enumerate(points.items()):
             coords = [float(x) for x in values[6:12]]
             coordsLine = [float(x) for x in values[0:6]]
+            tool_val = int(float(values[12]))
+            user_val = int(float(values[13]))
             move_speed = speed
 
             if point_name.lower().endswith("danger") or point_name.lower().endswith("gripper"):
                 move_speed = danger_speed
-            
+
             if point_name.lower().endswith("open-gripper"):
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
                 open_gripper()
             elif point_name.lower().endswith("close-gripper"):
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
                 close_gripper()
             else:
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
-            
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
+
             print(f"Point '{point_name}' reached. Return value: {errorDrive}")
             
         return True
@@ -230,20 +232,22 @@ def execute_release_movement(points: dict, speed: int=50, danger_speed: int=10, 
         for idx, (point_name, values) in enumerate(points.items()):
             coords = [float(x) for x in values[6:12]]
             coordsLine = [float(x) for x in values[0:6]]
+            tool_val = int(float(values[12]))
+            user_val = int(float(values[13]))
             move_speed = speed
 
             if point_name.lower().endswith("danger") or point_name.lower().endswith("gripper"):
                 move_speed = danger_speed
-            
+
             if point_name.lower().endswith("open-gripper"):
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
                 close_gripper()
             elif point_name.lower().endswith("close-gripper"):
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
                 open_gripper()
             else:
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
-            
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
+
             print(f"Point '{point_name}' reached. Return value: {errorDrive}")
             
         return True
