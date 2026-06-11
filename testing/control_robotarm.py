@@ -113,6 +113,26 @@ def close_gripper(openingWidth: int=90):
     print("Gripper command return code:", error1)
 
 
+def execute_movement(points: dict, speed: int=20, danger_speed: int=5, acceleration: int=30):
+    try:
+        for idx, (point_name, values) in enumerate(points.items()):
+            coords = [float(x) for x in values[6:12]]
+            coordsLine = [float(x) for x in values[0:6]]
+            move_speed = speed
+
+            if point_name.lower().endswith("danger") or point_name.lower().endswith("gripper"):
+                move_speed = danger_speed
+            
+            errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
+            print(f"Point '{point_name}' reached. Return value: {errorDrive}")
+        
+        return True
+    
+    except Exception as e:
+        print(f"Error moving: {e}")
+        return False
+
+
 def execute_pick_up_movement(points: dict, speed: int=50, danger_speed: int=10, acceleration: int=30):
     points = load_teach_points(points)
 
@@ -194,6 +214,38 @@ if __name__ == "__main__":
     # open_gripper()
     # close_gripper()
     sample = "Box1_A1"
+
+    points = {
+        "ot_1_hover-over": [
+        "35.764999",
+        "365.615997",
+        "-100.390999",
+        "-178.227997",
+        "0.868000",
+        "-0.535000",
+        "22.159000",
+        "-128.552002",
+        "-104.870003",
+        "-36.695000",
+        "91.970001",
+        "157.705002",
+        "1.000000",
+        "1.000000",
+        "100.000000",
+        "100.000000",
+        "0.000000",
+        "0.000000",
+        "0.000000",
+        "0.000000"
+        ],
+    }
+
+    execute_movement(
+        points=points,
+        speed=20,
+        danger_speed=5,
+        acceleration=30
+    )
     
     # release samples in Opentrons
     # execute_release_movement(
@@ -212,12 +264,12 @@ if __name__ == "__main__":
     #     )
     
     # release samples on FRAME
-    execute_release_movement(
-        points="./control-points/pick_up_frame.json",
-        speed=40,
-        danger_speed=5,
-        acceleration=30
-        )
+    # execute_release_movement(
+    #     points="./control-points/pick_up_frame.json",
+    #     speed=40,
+    #     danger_speed=5,
+    #     acceleration=30
+    #     )
 
     # pick up samples from FRAME
     # execute_pick_up_movement(
