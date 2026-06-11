@@ -212,12 +212,12 @@ if __name__ == "__main__":
         ],
     }
 
-#    execute_movement(
-#        points=points,
-#        speed=20,
-#        danger_speed=5,
-#        acceleration=30
-#    )
+    # execute_movement(
+    #     points=points,
+    #     speed=20,
+    #     danger_speed=5,
+    #     acceleration=30
+    # )
     
     # release samples in Opentrons
     # execute_release_movement(
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     execute_pick_up_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
         speed=20,
-        danger_speed=3,
+        danger_speed=10,
         acceleration=30
         )
     
