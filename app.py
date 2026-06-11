@@ -23,8 +23,8 @@ global_sync = SyncGroup("robot_sync")
 def _resolve_sdk_path() -> Optional[Path]:
     # Allow explicit override for CI/containers: FAIRINO_SDK_DIR=/path/to/fairino/.../fairino
     env_dir = os.getenv(
-        "FAIRINO_SDK_DIR", "/home/pi/arkirino/fairino-python-sdk/fairino"
-    )  # /home/pi/arkirino/linux/fairino
+        "FAIRINO_SDK_DIR", "/home/pi/fairinogale/fairino-python-sdk/fairino"
+    )  # /home/pi/fairinogale/linux/fairino
     if env_dir:
         return Path(env_dir)
 
@@ -322,7 +322,7 @@ def pick_up_frame(sample: str, speed: int = 40, acceleration: int = 30, dangerSp
         acceleration=30
         )
     
-    
+
 @register()
 def init_robot_and_gripper():
     """Initialize the robot and gripper."""
@@ -331,10 +331,26 @@ def init_robot_and_gripper():
     init_robot()
     init_gripper()
     print("Robot and gripper initialized successfully.")
+
+
+@register()
+def home_robot(move_speed: int = 30, acceleration: int = 30):
+    """Move the robot to the home position. ATTENTION: The robot will take the shortest path to the home position, so make sure that the way is clear, or move the arm manually to a safe position before homing."""
+    points = load_teach_points("./control-points/home_robot.json")
+    coords = [float(x) for x in points['home'][6:12]]
+
+    if not init():
+        print("Robot not initialized. Exiting.")
+        return
+    try:
+        rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
+        print("Robot homed successfully.")
+    except Exception as e:
+        print(f"Error homing robot: {e}")
     
 
 if __name__ == "__main__":
-    app_name = os.getenv("ARKITEKT_APPNAME", "arkirino")
+    app_name = os.getenv("ARKITEKT_APPNAME", "farinogale")
     if app_name == "":
         print("ARKITEKT_APPNAME is not set. Please set the ARKITEKT_APPNAME environment variable. For example put it in .env file.")
         exit(1)
