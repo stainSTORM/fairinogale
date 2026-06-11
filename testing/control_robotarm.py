@@ -29,7 +29,7 @@ from Robot import RPC
 # fairino5
 ROBOT_IP = "192.168.1.2"   
 SPEED = 30  
-TOOL = 0
+TOOL = 2
 USER = 0
 
 rbt = RPC(ROBOT_IP)
@@ -56,7 +56,8 @@ def init_robot():
     time.sleep(0.5)
     try:
         rbt.RobotEnable(1)
-        rbt.Mode(1)  # 0 = Jog, 1 = Auto, 2 = Programm
+        rbt.ResetAllError()
+        rbt.Mode(0)  # 0 = Jog, 1 = Auto, 2 = Programm
     except Exception as e:
         print("Fehler bei der Initialisierung:", e)
         rbt.RobotEnable(0)
@@ -138,7 +139,7 @@ def execute_pick_up_movement(points: dict, speed: int=50, danger_speed: int=10, 
 
     try:
         for idx, (point_name, values) in enumerate(points.items()):
-            coords = [float(x) for x in values[6:12]]
+            coords = [float(x) for x in values[:12]]
             coordsLine = [float(x) for x in values[0:6]]
             move_speed = speed
 
@@ -146,45 +147,14 @@ def execute_pick_up_movement(points: dict, speed: int=50, danger_speed: int=10, 
                 move_speed = danger_speed
             
             if point_name.lower().endswith("open-gripper"):
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=TOOL, user=1, vel=move_speed, acc=acceleration)
                 open_gripper()
             elif point_name.lower().endswith("close-gripper"):
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=TOOL, user=1, vel=move_speed, acc=acceleration)
                 close_gripper()
             else:
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
-            
-            print(f"Point '{point_name}' reached. Return value: {errorDrive}")
-            
-        return True
+                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=TOOL, user=1, vel=move_speed, acc=acceleration)
 
-    except Exception as e:
-        print(f"Error moving: {e}")
-        return False
-    
-
-def execute_release_movement(points: dict, speed: int=50, danger_speed: int=10, acceleration: int=30):
-    points = load_teach_points(points)
-    points = dict(reversed(list(points.items())))
-
-    try:
-        for idx, (point_name, values) in enumerate(points.items()):
-            coords = [float(x) for x in values[6:12]]
-            coordsLine = [float(x) for x in values[0:6]]
-            move_speed = speed
-
-            if point_name.lower().endswith("danger") or point_name.lower().endswith("gripper"):
-                move_speed = danger_speed
-            
-            if point_name.lower().endswith("open-gripper"):
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
-                close_gripper()
-            elif point_name.lower().endswith("close-gripper"):
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
-                open_gripper()
-            else:
-                errorDrive = rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
-            
             print(f"Point '{point_name}' reached. Return value: {errorDrive}")
             
         return True
@@ -211,8 +181,8 @@ if __name__ == "__main__":
     init_robot()
     init_gripper()
 
-    # open_gripper()
-    # close_gripper()
+#    open_gripper()
+    close_gripper()
     sample = "Box1_A1"
 
     points = {
@@ -240,12 +210,12 @@ if __name__ == "__main__":
         ],
     }
 
-    execute_movement(
-        points=points,
-        speed=20,
-        danger_speed=5,
-        acceleration=30
-    )
+#    execute_movement(
+#        points=points,
+#        speed=20,
+#        danger_speed=5,
+#        acceleration=30
+#    )
     
     # release samples in Opentrons
     # execute_release_movement(
@@ -256,12 +226,12 @@ if __name__ == "__main__":
     #     )
     
     # pick up samples from Opentrons
-    # execute_pick_up_movement(
-    #     points="./control-points/pick_up_opentrons_{}.json".format(sample), 
-    #     speed=20,
-    #     danger_speed=3,
-    #     acceleration=30
-    #     )
+    execute_pick_up_movement(
+        points="./control-points/pick_up_opentrons_{}.json".format(sample), 
+        speed=20,
+        danger_speed=3,
+        acceleration=30
+        )
     
     # release samples on FRAME
     # execute_release_movement(

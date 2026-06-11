@@ -66,12 +66,12 @@ def shutdown_robot():
 # Hauptprogramm
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    OUTPUT_FILE = "./control-points/pick_up_frame2.json"
+    OUTPUT_FILE = "./control-points/test.json"
     init_robot()
 
     # Liste der Punktnamen anpassen → musst du vorher im Teach-Interface sehen
     # teach_point_names = ["home", "frame_1", "frame_2", "frame_3", "frame_4", "frame_5_hovering_danger", "frame_6_close-gripper"]
-    teach_point_names = ["frame_4.5_open-gripper"]
+    teach_point_names = ["home", "wayout1_danger", "wayout2_danger", "wayout3_danger", "wayout4_danger", "wayout5", "wayout6", "wayout7", "wayout8", "wayout9", "ablage_danger"]
 
     save_teach_points(OUTPUT_FILE, teach_point_names)
     time.sleep(2)
