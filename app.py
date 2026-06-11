@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from random import sample
 from typing import Any, Dict, List, Optional, Tuple
 import os
 import sys
@@ -269,6 +270,36 @@ def shutdown_robot():
 
 
 @register()
+def pick_up_from_pickupstation(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
+    """Pick up the samples from the pickup station."""
+    if not init():
+        print("Could not start routine. Exiting.")
+        return
+    # pick up samples from pickup station
+    execute_pick_up_movement(
+        points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
+        speed=speed,
+        danger_speed=dangerSpeed,
+        acceleration=acceleration
+        )
+    
+
+@register()
+def release_at_pickupstation(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
+    """Release the samples at the pickup station."""
+    if not init():
+        print("Could not start routine. Exiting.")
+        return
+    # release samples at pickup station
+    execute_release_movement(
+        points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
+        speed=speed,
+        danger_speed=dangerSpeed,
+        acceleration=acceleration
+        )
+
+
+@register()
 def release_at_opentrons(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
     """Move the samples into the Opentrons."""
     if not init():
@@ -277,9 +308,9 @@ def release_at_opentrons(sample: str, speed: int = 40, acceleration: int = 30, d
     # release samples in Opentrons
     execute_release_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
-        speed=20,
-        danger_speed=3,
-        acceleration=30
+        speed=speed,
+        danger_speed=dangerSpeed,
+        acceleration=acceleration
         )
 
 
@@ -292,9 +323,9 @@ def pick_up_opentrons(sample: str, speed: int = 40, acceleration: int = 30, dang
     # pick up samples from Opentrons
     execute_pick_up_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
-        speed=20,
-        danger_speed=3,
-        acceleration=30
+        speed=speed,
+        danger_speed=dangerSpeed,
+        acceleration=acceleration
         )
 
 
@@ -306,9 +337,9 @@ def release_at_frame(sample: str, speed: int = 40, acceleration: int = 30, dange
         return
     execute_release_movement(
         points="./control-points/pick_up_frame.json",
-        speed=40,
-        danger_speed=5,
-        acceleration=30
+        speed=speed,
+        danger_speed=dangerSpeed,
+        acceleration=acceleration
         )
 
 
@@ -321,9 +352,9 @@ def pick_up_frame(sample: str, speed: int = 40, acceleration: int = 30, dangerSp
     # pick up samples from FRAME
     execute_pick_up_movement(
         points="./control-points/pick_up_frame.json",
-        speed=40,
-        danger_speed=5,
-        acceleration=30
+        speed=speed,
+        danger_speed=dangerSpeed,
+        acceleration=acceleration
         )
     
 

@@ -219,37 +219,20 @@ if __name__ == "__main__":
     close_gripper()
     sample = "Box1_A1"
 
-    points = {
-        "ot_1_hover-over": [
-        "35.764999",
-        "365.615997",
-        "-100.390999",
-        "-178.227997",
-        "0.868000",
-        "-0.535000",
-        "22.159000",
-        "-128.552002",
-        "-104.870003",
-        "-36.695000",
-        "91.970001",
-        "157.705002",
-        "1.000000",
-        "1.000000",
-        "100.000000",
-        "100.000000",
-        "0.000000",
-        "0.000000",
-        "0.000000",
-        "0.000000"
-        ],
-    }
-
     # execute_movement(
     #     points=points,
     #     speed=20,
     #     danger_speed=5,
     #     acceleration=30
     # )
+
+    # pick up samples from Opentrons
+    execute_pick_up_movement(
+        points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
+        speed=20,
+        danger_speed=10,
+        acceleration=30
+        )
     
     # release samples in Opentrons
     # execute_release_movement(
@@ -260,12 +243,12 @@ if __name__ == "__main__":
     #     )
     
     # pick up samples from Opentrons
-    execute_pick_up_movement(
-        points="./control-points/pick_up_opentrons_{}.json".format(sample), 
-        speed=20,
-        danger_speed=10,
-        acceleration=30
-        )
+    # execute_pick_up_movement(
+    #     points="./control-points/pick_up_opentrons_{}.json".format(sample), 
+    #     speed=20,
+    #     danger_speed=10,
+    #     acceleration=30
+    #     )
     
     # release samples on FRAME
     # execute_release_movement(
