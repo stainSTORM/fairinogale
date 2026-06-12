@@ -229,7 +229,7 @@ if __name__ == "__main__":
     # pick up samples from Opentrons
     execute_pick_up_movement(
         points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
-        speed=20,
+        speed=60,
         danger_speed=10,
         acceleration=30
         )
