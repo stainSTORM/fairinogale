@@ -412,6 +412,8 @@ def home_robot(move_speed: int = 30, acceleration: int = 30):
 
 if __name__ == "__main__":
     app_name = os.getenv("ARKITEKT_APPNAME", "farinogale")
+    init_robot()
+    init_gripper()
     if app_name == "":
         print("ARKITEKT_APPNAME is not set. Please set the ARKITEKT_APPNAME environment variable. For example put it in .env file.")
         exit(1)
