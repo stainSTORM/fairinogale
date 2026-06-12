@@ -11,7 +11,7 @@ import time
 import threading
 import platform
 from pathlib import Path
-from arkitekt_next import easy, register
+from arkitekt_next import easy, register, pausepoint
 from rekuest_next.actors.sync import SyncGroup
 from dotenv import load_dotenv
 
@@ -102,24 +102,6 @@ ROT_TORQUE = 0
 
 rbt = RPC(ROBOT_IP)
 
-IS_INITIALIZED = False
-
-# ---------------------------------------------------------
-# initialization
-# ---------------------------------------------------------
-def init() -> bool:
-    global IS_INITIALIZED
-    if IS_INITIALIZED:
-        return True
-    print("Start initializing robot and gripper")
-    if not init_robot():
-        return False
-    if not init_gripper():
-        return False
-    print("Robot and gripper initialized")
-    IS_INITIALIZED = True
-    return True
-
 
 def init_robot():
     """Establishes the connection to the robot and activates it."""
@@ -198,6 +180,7 @@ def execute_pick_up_movement(points: dict, speed: int=50, danger_speed: int=10, 
 
     try:
         for idx, (point_name, values) in enumerate(points.items()):
+            pausepoint()
             coords = [float(x) for x in values[6:12]]
             coordsLine = [float(x) for x in values[0:6]]
             tool_val = int(float(values[12]))
@@ -231,6 +214,7 @@ def execute_release_movement(points: dict, speed: int=50, danger_speed: int=10, 
 
     try:
         for idx, (point_name, values) in enumerate(points.items()):
+            pausepoint()
             coords = [float(x) for x in values[6:12]]
             coordsLine = [float(x) for x in values[0:6]]
             tool_val = int(float(values[12]))
@@ -272,10 +256,6 @@ def shutdown_robot():
 @register()
 def pick_up_from_pickupstation(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
     """Pick up the samples from the pickup station."""
-    if not init():
-        print("Could not start routine. Exiting.")
-        return
-    # pick up samples from pickup station
     execute_pick_up_movement(
         points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
         speed=speed,
@@ -287,10 +267,6 @@ def pick_up_from_pickupstation(sample: str, speed: int = 40, acceleration: int =
 @register()
 def release_at_pickupstation(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
     """Release the samples at the pickup station."""
-    if not init():
-        print("Could not start routine. Exiting.")
-        return
-    # release samples at pickup station
     execute_release_movement(
         points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
         speed=speed,
@@ -302,10 +278,6 @@ def release_at_pickupstation(sample: str, speed: int = 40, acceleration: int = 3
 @register()
 def release_at_opentrons(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
     """Move the samples into the Opentrons."""
-    if not init():
-        print("Could not start routine. Exiting.")
-        return
-    # release samples in Opentrons
     execute_release_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
         speed=speed,
@@ -317,10 +289,6 @@ def release_at_opentrons(sample: str, speed: int = 40, acceleration: int = 30, d
 @register()
 def pick_up_opentrons(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
     """Pick up the samples from the Opentrons."""
-    if not init():
-        print("Could not start routine. Exiting.")
-        return
-    # pick up samples from Opentrons
     execute_pick_up_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
         speed=speed,
@@ -332,9 +300,6 @@ def pick_up_opentrons(sample: str, speed: int = 40, acceleration: int = 30, dang
 @register()
 def release_at_frame(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
     """Move the samples onto the FRAME."""
-    if not init():
-        print("Could not start routine. Exiting.")
-        return
     execute_release_movement(
         points="./control-points/pick_up_frame.json",
         speed=speed,
@@ -346,10 +311,6 @@ def release_at_frame(sample: str, speed: int = 40, acceleration: int = 30, dange
 @register()
 def pick_up_frame(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
     """Pick up the samples from the FRAME."""
-    if not init():
-        print("Could not start routine. Exiting.")
-        return
-    # pick up samples from FRAME
     execute_pick_up_movement(
         points="./control-points/pick_up_frame.json",
         speed=speed,
@@ -361,8 +322,6 @@ def pick_up_frame(sample: str, speed: int = 40, acceleration: int = 30, dangerSp
 @register()
 def init_robot_and_gripper():
     """Initialize the robot and gripper."""
-    if not init():
-        print("Initialization failed. Exiting.")
     init_robot()
     init_gripper()
     print("Robot and gripper initialized successfully.")
@@ -371,9 +330,6 @@ def init_robot_and_gripper():
 @register()
 def open_grip():
     """Open the gripper."""
-    if not init():
-        print("Robot not initialized. Exiting.")
-        return
     try:
         open_gripper()
         print("Gripper opened successfully.")
@@ -384,9 +340,6 @@ def open_grip():
 @register()
 def close_grip():
     """Close the gripper."""
-    if not init():
-        print("Robot not initialized. Exiting.")
-        return
     try:
         close_gripper()
         print("Gripper closed successfully.")
@@ -399,10 +352,7 @@ def home_robot(move_speed: int = 30, acceleration: int = 30):
     """Move the robot to the home position. ATTENTION: The robot will take the shortest path to the home position, so make sure that the way is clear, or move the arm manually to a safe position before homing."""
     points = load_teach_points("./control-points/home_robot.json")
     coords = [float(x) for x in points['home'][6:12]]
-
-    if not init():
-        print("Robot not initialized. Exiting.")
-        return
+    
     try:
         rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
         print("Robot homed successfully.")
