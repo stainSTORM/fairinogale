@@ -175,7 +175,7 @@ def close_gripper(openingWidth: int = 95):
     print("Gripper command return code:", error1)
 
 
-def execute_pick_up_movement(points: dict, speed: int=50, danger_speed: int=10, acceleration: int=30):
+def execute_pick_up_movement(points: dict, speed: int=70, danger_speed: int=10, acceleration: int=30):
     points = load_teach_points(points)
 
     try:
@@ -208,7 +208,7 @@ def execute_pick_up_movement(points: dict, speed: int=50, danger_speed: int=10, 
         return False
     
 
-def execute_release_movement(points: dict, speed: int=50, danger_speed: int=10, acceleration: int=30):
+def execute_release_movement(points: dict, speed: int=70, danger_speed: int=10, acceleration: int=30):
     points = load_teach_points(points)
     points = dict(reversed(list(points.items())))
 
@@ -254,7 +254,7 @@ def shutdown_robot():
 
 
 @register()
-def pick_up_from_pickupstation(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
+def pick_up_from_pickupstation(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
     """Pick up the samples from the pickup station."""
     execute_pick_up_movement(
         points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
@@ -265,7 +265,7 @@ def pick_up_from_pickupstation(sample: str, speed: int = 40, acceleration: int =
     
 
 @register()
-def release_at_pickupstation(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
+def release_at_pickupstation(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
     """Release the samples at the pickup station."""
     execute_release_movement(
         points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
@@ -276,7 +276,7 @@ def release_at_pickupstation(sample: str, speed: int = 40, acceleration: int = 3
 
 
 @register()
-def release_at_opentrons(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
+def release_at_opentrons(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
     """Move the samples into the Opentrons."""
     execute_release_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
@@ -287,7 +287,7 @@ def release_at_opentrons(sample: str, speed: int = 40, acceleration: int = 30, d
 
 
 @register()
-def pick_up_opentrons(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
+def pick_up_opentrons(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
     """Pick up the samples from the Opentrons."""
     execute_pick_up_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
@@ -298,7 +298,7 @@ def pick_up_opentrons(sample: str, speed: int = 40, acceleration: int = 30, dang
 
 
 @register()
-def release_at_frame(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
+def release_at_frame(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
     """Move the samples onto the FRAME."""
     execute_release_movement(
         points="./control-points/pick_up_frame.json",
@@ -309,7 +309,7 @@ def release_at_frame(sample: str, speed: int = 40, acceleration: int = 30, dange
 
 
 @register()
-def pick_up_frame(sample: str, speed: int = 40, acceleration: int = 30, dangerSpeed: int = 5):
+def pick_up_frame(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
     """Pick up the samples from the FRAME."""
     execute_pick_up_movement(
         points="./control-points/pick_up_frame.json",
@@ -352,7 +352,7 @@ def home_robot(move_speed: int = 30, acceleration: int = 30):
     """Move the robot to the home position. ATTENTION: The robot will take the shortest path to the home position, so make sure that the way is clear, or move the arm manually to a safe position before homing."""
     points = load_teach_points("./control-points/home_robot.json")
     coords = [float(x) for x in points['home'][6:12]]
-    
+
     try:
         rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
         print("Robot homed successfully.")
