@@ -254,7 +254,7 @@ def shutdown_robot():
 
 
 @register()
-def pick_up_from_pickupstation(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
+def pick_up_from_pickupstation(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
     """Pick up the samples from the pickup station."""
     execute_pick_up_movement(
         points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
@@ -265,7 +265,7 @@ def pick_up_from_pickupstation(sample: str, speed: int = 70, acceleration: int =
     
 
 @register()
-def release_at_pickupstation(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
+def release_at_pickupstation(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
     """Release the samples at the pickup station."""
     execute_release_movement(
         points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
@@ -276,7 +276,7 @@ def release_at_pickupstation(sample: str, speed: int = 70, acceleration: int = 3
 
 
 @register()
-def release_at_opentrons(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
+def release_at_opentrons(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
     """Move the samples into the Opentrons."""
     execute_release_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
@@ -287,7 +287,7 @@ def release_at_opentrons(sample: str, speed: int = 70, acceleration: int = 30, d
 
 
 @register()
-def pick_up_opentrons(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
+def pick_up_opentrons(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
     """Pick up the samples from the Opentrons."""
     execute_pick_up_movement(
         points="./control-points/pick_up_opentrons_{}.json".format(sample), 
@@ -298,7 +298,7 @@ def pick_up_opentrons(sample: str, speed: int = 70, acceleration: int = 30, dang
 
 
 @register()
-def release_at_frame(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
+def release_at_frame(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
     """Move the samples onto the FRAME."""
     execute_release_movement(
         points="./control-points/pick_up_frame.json",
@@ -309,7 +309,7 @@ def release_at_frame(sample: str, speed: int = 70, acceleration: int = 30, dange
 
 
 @register()
-def pick_up_frame(sample: str, speed: int = 70, acceleration: int = 30, dangerSpeed: int = 5):
+def pick_up_frame(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
     """Pick up the samples from the FRAME."""
     execute_pick_up_movement(
         points="./control-points/pick_up_frame.json",
