@@ -1,193 +1,145 @@
 # fairinogale
 
-**Arkitekt node for Fairino collaborative robot arms.**  
-Exposes robot pick-and-place routines (liquidhandler ↔ microscope ↔ pickup station) as callable Arkitekt node so they can be orchestrated from any Arkitekt workflow.
+**The Fairino robot arm as an [Arkitekt](https://arkitekt.live) app.** It moves slides between the
+stations of the staining workflow (pickup station, Opentrons, microscope), so that a workflow such
+as [protocolapp](https://github.com/stainSTORM/protocolapp) can call it.
 
----
+It runs as a container on the openUC2 OS Raspberry Pi image (see
+[Raspberry Pi](#raspberry-pi)), or with `uv` on any computer that can reach the arm.
 
-## Features
+## Actions
 
-- Connect to a Fairino robot over TCP/IP and expose its motion commands to [Arkitekt](https://arkitekt.live)
-- Four registered Arkitekt nodes out of the box:
-  - `pick_up_frame` — pick samples from the staining frame
-  - `release_at_frame` — place samples onto the staining frame
-  - `pick_up_opentrons` — pick samples from an Opentrons liquid handler
-  - `release_at_opentrons` — release samples into an Opentrons liquid handler
-- JSON-based teach-point system: record poses once, replay them reliably
-- Automatic speed reduction for "danger" and "gripper" waypoints
-- MockRPC fallback for development without physical hardware
-- Cross-platform SDK loader (Windows / Linux); override path via `FAIRINO_SDK_DIR`
+| Action | Arguments | What it does |
+|---|---|---|
+| `pick_up` | `station`, `sample`, `speed`, `acceleration`, `danger_speed` | Drives to the station, grips the slide, comes back |
+| `release_at` | same | Drives to the station, puts the slide down, comes back |
+| `init_robot_and_gripper` | | Enables the arm in automatic mode, activates the gripper |
+| `open_grip`, `close_grip` | | |
+| `home_robot` | `speed`, `acceleration` | Straight to the home pose (shortest joint path: clear the way first) |
 
----
+`station` is a dropdown of the stations in `config.yaml`. `sample` fills `{sample}` in a station's
+file name (for example `Box1_A1`); stations without `{sample}` ignore it. The speeds default to the
+values in `config.yaml`.
 
-## Requirements
-
-- Python ≥ 3.12
-- [uv](https://github.com/astral-sh/uv) (recommended) or pip
-- Fairino Python SDK (bundled under `fairino-python-sdk/`)
-- A running [Arkitekt](https://arkitekt.live) server (local or `go.arkitekt.live`)
-- Fairino robot reachable at its configured IP address (default `192.168.50.200`)
-
----
-
-## Installation
-
-```bash
-# 1. Clone the repo
-git clone https://github.com/<your-org>/fairinogale.git
-cd fairinogale
-
-# 2. Install dependencies with uv
-uv sync
-
-# 3. Copy and fill in the environment file
-cp .env.example .env
-```
-
-If you don't have `uv`:
-
-```bash
-pip install arkitekt-next
-```
-
----
+- Every action holds one `robot` lock, so calls run one at a time.
+- A move the controller rejects (non-zero error code) stops the sequence and fails the action.
+  The old code printed the error and carried on.
+- Cancelling the task in Arkitekt stops the arm at the next teach point.
 
 ## Configuration
 
-Create a `.env` file in the project root (see up in the Installation section, or export these variables in your shell):
+Everything is in `config.yaml`: the arm's IP, the gripper positions, the default speeds and the
+stations. On the first start it is copied from [config.example.yaml](config.example.yaml), which
+explains each key. `robot.mock: true` runs without an arm and only prints the moves.
 
-| Variable | Default | Description |
-|---|---|---|
-| `ARKITEKT_APPNAME` | — | **Required.** App identifier registered in Arkitekt (e.g. `fairinogale`) |
-| `ARKITEKT_URL` | `go.arkitekt.live` | URL of your Arkitekt server |
-| `REDEEM_TOKEN` | — | One-time redeem token for first-time app registration |
-| `FAIRINO_SDK_DIR` | auto-detected | Absolute path to the `fairino` SDK folder (overrides auto-detection) |
+### Stations and teach points
 
-Example `.env`:
+A station is a teach-point file in `control-points/`. Two layouts work:
 
-```env
-ARKITEKT_APPNAME=farinogale
-ARKITEKT_URL=go.arkitekt.live
-REDEEM_TOKEN=your_token_here
-# Optional: override SDK path for CI or containers
-# FAIRINO_SDK_DIR=/home/pi/fairinogale/fairino-python-sdk/linux/fairino
+- **Round trip** (the original fairinogale layout, e.g. `pick_up_frame.json`): every pose in
+  driving order, including the way back (`r_...` points). Name suffixes set the behaviour:
+  `_danger` is driven at `danger_speed`; `_open-gripper` and `_close-gripper` act on the gripper.
+  `release_at` drives the file backwards, with open and close swapped.
+- **Out and back** (the Jena layout, e.g. `jena/opentrons.json`): `home`, `move1` … `moveN`. The arm
+  drives out to `moveN` and back the same way. The station lists, separately for pick and release,
+  the points driven linearly (MoveL at `danger_speed`) and where the gripper opens and closes on
+  the way out.
+
+```yaml
+stations:
+  frame:
+    file: pick_up_frame.json
+  opentrons:
+    file: jena/opentrons.json
+    out_and_back: true
+    pick: {linear: [move7, move8, move9], open: [move6], close: [move9]}
+    release: {linear: [move7, move8], open: [move8]}
 ```
 
-Robot and gripper settings are configured directly in [app.py](app.py):
+The shipped teach points come from two installations (`frame` from the fairinogale setup,
+`opentrons` and `pickupstation` from the Jena setup). Teach points belong to one arm and one
+bench, so re-teach them for yours before driving the arm.
 
-```python
-ROBOT_IP = "192.168.1.2"       # IP address of the Fairino robot
-SPEED    = 30                  # Default joint speed (%)
-```
+### Teaching
 
----
-
-## Usage
-
-### Start the app
+Name the poses in the Fairino teach interface, then read them from the controller into a station
+file. The points are saved in the order given, which is the order the arm drives them:
 
 ```bash
-uv run python app.py
+uv run teach.py control-points/my_station.json home move1 move2 move3
 ```
 
-The app connects to the robot, initializes the gripper, and registers itself with Arkitekt. Once running, the four motion nodes appear in the Arkitekt UI and can be wired into any workflow.
+On the Pi: `docker exec -it <container> python teach.py /config/control-points/my_station.json home move1 …`
+This only reads from the controller; it does not enable or move the arm.
 
-### Run without hardware (MockRPC)
-
-If the Fairino SDK is not installed or the robot is unreachable, the app falls back to `MockRPC` automatically.
-
----
-
-## Registered Arkitekt Nodes
-
-| Node | Parameter | Description |
-|---|---|---|
-| `init_robot_and_gripper` | — | Initialize robot and gripper before a run |
-| `pick_up_frame` | `sample` | Pick samples from the staining frame |
-| `release_at_frame` | `sample` | Place samples onto the staining frame |
-| `pick_up_opentrons` | `sample` | Pick samples from the Opentrons |
-| `release_at_opentrons` | `sample` | Release samples into the Opentrons |
-
-All motion nodes accept optional `speed`, `acceleration`, and `dangerSpeed` parameters.
-
----
-
-## Examples
-
-### Trigger a pick-and-place from Python
-
-```python
-from app import init, pick_up_frame, release_at_opentrons
-
-init()
-pick_up_frame(sample="Box1_A1")
-release_at_opentrons(sample="Box1_A1")
-```
-
-### Run the standalone test script for testing
+## Running locally (uv)
 
 ```bash
-uv run python testing/control_robotarm.py
+uv sync
+uv run app.py                 # config.yaml next to app.py; FAIRINO_CONFIG=... for another one
 ```
 
-Edit the `__main__` block at the bottom to choose which movement to execute.
+Open <http://localhost:8080/> to bind it (see below). Set `robot.mock: true` to try it without an
+arm. On the Pi, stop the container first (`forklift plt disable-depl fairino && forklift plt apply`)
+so that the two do not drive the arm at the same time. Then point `FAIRINO_CONFIG` at
+`/home/pi/arkitekt/fairino/config.yaml` to reuse its config and stored login.
 
----
+## Binding to an Arkitekt server
 
-## Teach Points
+The page on port 8080 (on the Pi: `http://<pi>/fairino/`):
 
-Teach points are robot poses stored as JSON files under `control-points/`. Each entry is a named waypoint with 20 values (joint angles + Cartesian coordinates + metadata).
+1. Enter the server (e.g. `https://go.arkitekt.live`, or a local one) and press **Bind**.
+2. The page shows a code and an approval link. Open the link in any browser, sign in and check that
+   the code matches.
+3. The app registers its actions and stays connected. The login is stored in `.state/` next to
+   `config.yaml`, so the app reconnects by itself after a restart.
 
-### Naming conventions
+**Disconnect** keeps the stored login; **Unbind** forgets it. Tick *allow plain http* for a server
+without TLS (e.g. a NAS); the session token then travels unencrypted. The page also edits
+`config.yaml`: **Save and restart** checks the YAML, writes it and restarts the app.
 
-The point name suffix controls automatic speed and gripper behaviour:
+`arkitekt_bind.py` is the same file in fairinogale and OT2windy. Keep the copies identical.
 
-| Suffix | Effect |
-|---|---|
-| `_danger` | Speed reduced to `danger_speed` |
-| `_open-gripper` | Move to pose, then **open** gripper |
-| `_close-gripper` | Move to pose, then **close** gripper |
-| _(none)_ | Normal speed, no gripper action |
-
-### Recording new teach points
-
-1. Jog the robot to the desired pose using the teach pendant.
-2. Name the point in the Fairino teach interface following the suffix conventions above.
-3. Run the capture script, editing `teach_point_names` to match your point names:
+## Docker
 
 ```bash
-uv run python testing/get_points.py
+docker build -t fairinogale .
+docker run -p 8080:8080 -v ~/fairino:/config fairinogale
 ```
 
-Points are saved to `control-points/<your_file>.json` and can be referenced directly by the motion functions in `app.py`.
+GitHub Actions ([.github/workflows/docker.yml](.github/workflows/docker.yml)) builds
+`ghcr.io/stainstorm/fairinogale` for arm64 and amd64 on every push, tagged `sha-<commit>` and with
+the branch name.
 
----
+## Raspberry Pi
+
+The openUC2 OS pallet ([openUC2/os-rpi](https://github.com/openUC2/os-rpi)) deploys this container
+as `fairino`. The `os-rpi-arkitekt` SD card image has it switched on. On another openUC2 OS
+machine:
+
+```bash
+forklift plt enable-depl fairino && forklift plt apply
+```
+
+The config and teach points then live in `/home/pi/arkitekt/fairino/`. To ship a new version,
+push here, then set the new `sha-<commit>` tag in os-rpi's `deployments/fairino.pkg/deployment.compose.yml`.
 
 ## fairino-python-sdk
 
-Introduction
-------------
-This is a Python language SDK library specially designed for fairino collaborative robots.
+The vendored [Fairino Python SDK](https://fair-documentation.readthedocs.io/en/latest/SDKManual/python_intro.html)
+(`fairino-python-sdk/`). The container uses only `linux/fairino/Robot.py`, which is pure Python.
+`FAIRINO_SDK_DIR` points the app at another copy.
 
-Documentation
--------------
-Please see [Python SDK](https://fair-documentation.readthedocs.io/en/latest/SDKManual/python_intro.html).
-
-
----
-
-## Project Structure
+## Project structure
 
 ```
 fairinogale/
-├── app.py                    # Main Arkitekt app — registered nodes live here
-├── pyproject.toml
-├── .env                      # Local config (not committed)
-├── control-points/           # Teach-point JSON files per movement
-│   ├── pick_up_frame.json
-│   └── pick_up_opentrons_Box1_A1.json
-├── testing/
-│   ├── control_robotarm.py   # Standalone movement test script
-│   └── get_points.py         # Utility to capture teach points from the robot
-└── fairino-python-sdk/       # Vendored Fairino SDK (Windows + Linux)
+├── app.py                 # the Arkitekt app: actions, stations, robot connection
+├── arkitekt_bind.py       # binding page and connection (same file in OT2windy)
+├── teach.py               # read teach points from the controller into a station file
+├── config.example.yaml    # copied to config.yaml on the first start
+├── control-points/        # teach-point files (jena/: the Jena installation)
+├── mock/MockRPC.py        # stand-in for the SDK when robot.mock is set
+├── testing/               # older standalone test scripts
+└── fairino-python-sdk/    # vendored Fairino SDK
 ```

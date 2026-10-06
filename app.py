@@ -1,373 +1,207 @@
-# -*- coding: utf-8 -*-
+"""Fairino robot arm as an Arkitekt app.
 
-from __future__ import annotations
+The arm carries slides between stations (pickup station, Opentrons, microscope). A station is a
+teach-point file; config.yaml lists them, with the robot's IP and the speeds. Two layouts work:
 
-from random import sample
-from typing import Any, Dict, List, Optional, Tuple
-import os
-import sys
+- round trip (fairinogale): every pose in driving order, including the way back (r_ points).
+  Name suffixes set the behaviour: ..._danger is driven slowly, ..._open-gripper and
+  ..._close-gripper act on the gripper. Release drives the file backwards with open and close
+  swapped.
+- out and back (Jena): home, move1..moveN. The arm drives out to moveN and back the same way.
+  The station lists which points are driven linearly and slowly, and where the gripper opens and
+  closes, separately for pick and release.
+
+Run:  uv run app.py   then open http://localhost:8080/ to bind it.
+FAIRINO_CONFIG picks another config.yaml (default: next to this file).
+"""
+
 import json
-import time
-import threading
+import os
 import platform
+import shutil
+import sys
+import threading
 from pathlib import Path
-from arkitekt_next import easy, register, pausepoint
-from rekuest_next.actors.sync import SyncGroup
-from dotenv import load_dotenv
+from typing import Annotated
+
+import koil
+import yaml
+from arkitekt import App, Description, Effects, Task
+from arkitekt.widgets import withChoices
+
+from arkitekt_bind import serve
+
+HERE = Path(__file__).resolve().parent
+CONFIG = Path(os.getenv("FAIRINO_CONFIG", HERE / "config.yaml"))
+
+if not CONFIG.exists():  # first start: copy the defaults where they can be edited
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(HERE / "config.example.yaml", CONFIG)
+    if not (CONFIG.parent / "control-points").exists():
+        shutil.copytree(HERE / "control-points", CONFIG.parent / "control-points")
+cfg = yaml.safe_load(CONFIG.read_text())
+POINTS = CONFIG.parent / cfg.get("points_dir", "control-points")
+STATIONS = list(cfg["stations"])
+
+app = App(cfg.get("app", "fairinogale"), "1.0.0", effects=Effects.IRREVERSIBLE)
+
+Station = Annotated[str, withChoices(*STATIONS), Description("Station from config.yaml")]
+Sample = Annotated[str, Description("Fills {sample} in the station's file name, e.g. Box1_A1")]
+Speed = Annotated[int, Description("Joint speed in %, outside danger zones")]
+Acceleration = Annotated[int, Description("Acceleration in %")]
+DangerSpeed = Annotated[int, Description("Speed in % at danger, linear and gripper points")]
+
+_robot = None
+_robot_lock = threading.Lock()
 
 
-global_sync = SyncGroup("robot_sync")
+def rpc_class():
+    """The Fairino SDK's RPC, or the mock when robot.mock is set."""
+    if cfg["robot"].get("mock"):
+        from mock.MockRPC import MockRPC
 
-# ------------------------------------------------------------------------------
-# Fairino SDK import (Windows/Linux) with optional FAIRINO_SDK_DIR override
-# ------------------------------------------------------------------------------
-def _resolve_sdk_path() -> Optional[Path]:
-    # Allow explicit override for CI/containers: FAIRINO_SDK_DIR=/path/to/fairino/.../fairino
-    env_dir = os.getenv(
-        "FAIRINO_SDK_DIR", "/home/pi/fairinogale/fairino-python-sdk/linux/fairino"
-    )  # /home/pi/fairinogale/linux/fairino
-    if env_dir:
-        return Path(env_dir)
+        return MockRPC
+    sdk = "windows" if platform.system() == "Windows" else "linux"
+    sys.path.insert(0, os.getenv("FAIRINO_SDK_DIR", str(HERE / "fairino-python-sdk" / sdk / "fairino")))
+    from Robot import RPC
 
-    system_name = platform.system().lower()
-    root = Path("fairino-python-sdk")
-    if system_name == "windows":
-        return (root / "windows" / "fairino").resolve()
-    elif system_name == "linux":
-        return (root / "linux" / "fairino").resolve()
+    return RPC
+
+
+def robot():
+    """The connection to the arm, opened on first use so the app starts without it."""
+    global _robot
+    with _robot_lock:
+        if _robot is None:
+            ip, RPC = cfg["robot"]["ip"], rpc_class()
+            rpc = RPC(ip)
+            if getattr(RPC, "is_connect", True) is False:
+                rpc.CloseRPC()  # stops the SDK's receive threads
+                raise ConnectionError(f"Cannot reach the Fairino robot at {ip} (robot.ip in {CONFIG})")
+            rpc.RobotEnable(1)
+            rpc.Mode(1)  # 0 = manual, 1 = automatic
+            _robot = rpc
+        return _robot
+
+
+def check(error, what: str) -> None:
+    """The SDK returns 0 on success; anything else stops the sequence."""
+    if error not in (0, None):
+        raise RuntimeError(f"{what} failed with Fairino error code {error}")
+
+
+def gripper(position: int, velocity: int) -> None:
+    g = cfg["gripper"]
+    check(robot().MoveGripper(g.get("jaw", 1), position, velocity, 30, 10000, 0, 0, 0, 0, 0),
+          f"gripper to {position}")
+
+
+def drive(station: str, sample: str, release: bool, speed: int, acceleration: int,
+          danger_speed: int, task: Task) -> None:
+    if station not in cfg["stations"]:
+        raise ValueError(f"Unknown station {station!r}; config.yaml has {STATIONS}")
+    st = cfg["stations"][station]
+    if "{sample}" in st["file"] and not sample:
+        raise ValueError(f"Station {station!r} needs a sample (its file is {st['file']})")
+    points = json.loads((POINTS / st["file"].format(sample=sample)).read_text())
+    plan = st.get("release" if release else "pick") or {}
+
+    if st.get("out_and_back"):
+        moves = [n for n in points if n != "home"]
+        home = ["home"] if "home" in points else []
+        order = home + moves + moves[-2::-1] + home
+        outward = len(home) + len(moves)  # the gripper acts on the way out only
     else:
-        # Unsupported OS: caller will fall back to MockRPC
-        return None
+        order = list(points)[::-1] if release else list(points)
+        outward = len(order)
+
+    rbt, g = robot(), cfg["gripper"]
+    for i, name in enumerate(order):
+        task.pausepoint()
+        koil.check_cancelled()  # a cancelled task stops at the next point, not after the route
+        values = [float(v) for v in points[name]]
+        pose, joints, tool, user = values[0:6], values[6:12], int(values[12]), int(values[13])
+        lower = name.lower()
+        linear = name in plan.get("linear", [])
+        vel = danger_speed if linear or lower.endswith(("danger", "gripper")) else speed
+        if linear:
+            check(rbt.MoveL(pose, tool=tool, user=user, vel=vel, acc=acceleration), f"MoveL to {name}")
+        else:
+            check(rbt.MoveJ(joints, tool=tool, user=user, desc_pos=pose, vel=vel, acc=acceleration),
+                  f"MoveJ to {name}")
+
+        opens = closes = False
+        if i < outward:
+            opens, closes = name in plan.get("open", []), name in plan.get("close", [])
+        if lower.endswith("open-gripper"):
+            opens, closes = not release, release
+        elif lower.endswith("close-gripper"):
+            opens, closes = release, not release
+        if opens:
+            gripper(g["open"], 30)
+        if closes:
+            gripper(g["close"], 50)
+        task.progress(int(100 * (i + 1) / len(order)), name)
 
 
-RPC = None  # will be assigned below
+@app.action(locks=["robot"])
+def pick_up(station: Station, sample: Sample = "", speed: Speed = cfg["speed"],
+            acceleration: Acceleration = cfg["acceleration"],
+            danger_speed: DangerSpeed = cfg["danger_speed"], *, task: Task) -> None:
+    """Pick Up
 
-load_dotenv()
-
-sdk_path = _resolve_sdk_path()
-print(f"SDK path: {sdk_path}")
-if sdk_path and sdk_path.exists():
-    sys.path.append(str(sdk_path))
-    try:
-        from Robot import RPC as _RealRPC  # type: ignore
-
-        RPC = _RealRPC
-        print(f"Fairino SDK loaded from {sdk_path}")
-    except Exception as e:
-        print(f"Failed loading Fairino SDK from {sdk_path}: {e}")
-
-if RPC is None:
-    # Fallback to MockRPC for environments without the hardware SDK installed.
-    try:
-        from mock.MockRPC import MockRPC  # type: ignore
-    except Exception:
-        try:
-            from MockRPC import MockRPC  # type: ignore
-        except Exception:
-            MockRPC = None  # No mock available
-
-    if MockRPC is None:
-        raise ImportError(
-            "Neither Fairino SDK nor MockRPC is available. "
-            "Install the SDK or provide a MockRPC for development."
-        )
-    RPC = MockRPC  # type: ignore
-    print("Fairino SDK unavailable; using MockRPC fallback")
+    Drives to the station, grips the slide and comes back.
+    """
+    drive(station, sample, False, speed, acceleration, danger_speed, task)
 
 
-# ---------------------------------------------------------
-# configuration
-# ---------------------------------------------------------
-# fairino5
-ROBOT_IP = os.getenv("ROBOT_IP", "192.168.5.1")
-SPEED = 30
-TOOL = 0
-USER = 0
+@app.action(locks=["robot"])
+def release_at(station: Station, sample: Sample = "", speed: Speed = cfg["speed"],
+               acceleration: Acceleration = cfg["acceleration"],
+               danger_speed: DangerSpeed = cfg["danger_speed"], *, task: Task) -> None:
+    """Release At
+
+    Drives to the station, puts the slide down and comes back.
+    """
+    drive(station, sample, True, speed, acceleration, danger_speed, task)
 
 
-# gripper settings
-COMPANY = 6
-DEVICE = 0
-JAWNUMBER = 1
-POS = 0  # percentage range [0~100]
-FORCE = 50  # percentage [0~100]
-VELOCITY = 30  # percentage [0 to 100]
-MAXTIME = 10000  # waittime in ms [0~30000]
-IS_BLOCKING = 0  # 0-blocking, 1-non-blocking
-TYP = 0
-ROT_NUM = 0
-ROT_VEL = 0
-ROT_TORQUE = 0
+@app.action(locks=["robot"])
+def init_robot_and_gripper() -> None:
+    """Init Robot and Gripper
+
+    Enables the arm in automatic mode, activates the gripper and moves it to its initial width.
+    """
+    rbt, g = robot(), cfg["gripper"]
+    rbt.SetGripperConfig(g.get("company", 6), g.get("device", 0), softversion=0, bus=0)
+    check(rbt.ActGripper(g.get("jaw", 1), 1), "activating the gripper")
+    gripper(g.get("initial", g["close"]), 30)
 
 
-rbt = RPC(ROBOT_IP)
+@app.action(locks=["robot"])
+def open_grip() -> None:
+    """Open Gripper"""
+    gripper(cfg["gripper"]["open"], 30)
 
 
-def init_robot():
-    """Establishes the connection to the robot and activates it."""
-    time.sleep(0.5)
-    try:
-        print(f"Connected to robot {ROBOT_IP}")
-        print(f"Robot object: {rbt}")
-        rbt.RobotEnable(1)
-        rbt.Mode(1)  # 0 = Jog, 1 = Auto, 2 = Program
-        print("Robot is ready.")
-    except Exception as e:
-        print("Initialization error:", e)
-        rbt.RobotEnable(0)
-        return False
-    return True
+@app.action(locks=["robot"])
+def close_grip() -> None:
+    """Close Gripper"""
+    gripper(cfg["gripper"]["close"], 50)
 
 
-def init_gripper(openingWidth: int = 95):
-    """Connects to the gripper and activates it."""
-    try:
-        jawnumber = 1
-        ret = rbt.SetGripperConfig(COMPANY, DEVICE, softversion=0, bus=0)
-        print("Configure gripper ", ret)
-        time.sleep(1)
-        error = rbt.ActGripper(jawnumber, 1)
-        print("Activate gripper ", error)
-        time.sleep(2)
-        rbt.MoveGripper(
-            jawnumber, openingWidth, 30, 30, 10000, 0, 0, 0, 0, 0
-        )
-    except Exception as e:
-        print("Error initializing gripper:", e)
-        return False
-    return True
+@app.action(locks=["robot"])
+def home_robot(speed: Speed = 30, acceleration: Acceleration = 30) -> None:
+    """Home Robot
 
+    Moves straight to the home pose. The arm takes the shortest joint path: make sure it is clear,
+    or move the arm by hand to a safe pose first.
+    """
+    home = json.loads((POINTS / cfg.get("home_file", "home_robot.json")).read_text())["home"]
+    values = [float(v) for v in home]
+    check(robot().MoveJ(values[6:12], tool=int(values[12]), user=int(values[13]),
+                        desc_pos=values[0:6], vel=speed, acc=acceleration), "MoveJ to home")
 
-# ---------------------------------------------------------
-# loading taught points as JSON
-# ---------------------------------------------------------
-def load_teach_points(teach_points_file) -> Optional[Dict[str, List[float]]]:
-    """Loads the stored teach points from a JSON file."""
-    if not os.path.exists(teach_points_file):
-        print(f"Error: File '{teach_points_file}' not found.")
-        return None
-
-    try:
-        with open(teach_points_file, "r") as f:
-            points = json.load(f)
-        print(f"{len(points)} teach points loaded successfully.")
-        return points
-    except Exception as e:
-        print("Error loading teach points:", e)
-        return None
-
-
-# ---------------------------------------------------------
-# driving
-# ---------------------------------------------------------
-
-def open_gripper(openingWidth: int = 50):
-    jawnumber = 1
-    print("\n--- Starting gripper movement ---")
-    error1 = rbt.MoveGripper(jawnumber, openingWidth, 30, 30, 10000, 0, 0, 0, 0, 0)
-    print("Gripper command return code:", error1)
-
-
-def close_gripper(openingWidth: int = 95):
-    jawnumber = 1
-    print("\n--- Starting gripper movement ---")
-    error1 = rbt.MoveGripper(jawnumber, openingWidth, 50, 30, 10000, 0, 0, 0, 0, 0)
-    print("Gripper command return code:", error1)
-
-
-def execute_pick_up_movement(points: dict, speed: int=70, danger_speed: int=10, acceleration: int=30):
-    points = load_teach_points(points)
-
-    try:
-        for idx, (point_name, values) in enumerate(points.items()):
-            pausepoint()
-            coords = [float(x) for x in values[6:12]]
-            coordsLine = [float(x) for x in values[0:6]]
-            tool_val = int(float(values[12]))
-            user_val = int(float(values[13]))
-            move_speed = speed
-
-            if point_name.lower().endswith("danger") or point_name.lower().endswith("gripper"):
-                move_speed = danger_speed
-
-            if point_name.lower().endswith("open-gripper"):
-                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
-                open_gripper()
-            elif point_name.lower().endswith("close-gripper"):
-                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
-                close_gripper()
-            else:
-                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
-
-            print(f"Point '{point_name}' reached. Return value: {errorDrive}")
-            
-        return True
-
-    except Exception as e:
-        print(f"Error moving: {e}")
-        return False
-    
-
-def execute_release_movement(points: dict, speed: int=70, danger_speed: int=10, acceleration: int=30):
-    points = load_teach_points(points)
-    points = dict(reversed(list(points.items())))
-
-    try:
-        for idx, (point_name, values) in enumerate(points.items()):
-            pausepoint()
-            coords = [float(x) for x in values[6:12]]
-            coordsLine = [float(x) for x in values[0:6]]
-            tool_val = int(float(values[12]))
-            user_val = int(float(values[13]))
-            move_speed = speed
-
-            if point_name.lower().endswith("danger") or point_name.lower().endswith("gripper"):
-                move_speed = danger_speed
-
-            if point_name.lower().endswith("open-gripper"):
-                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
-                close_gripper()
-            elif point_name.lower().endswith("close-gripper"):
-                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
-                open_gripper()
-            else:
-                errorDrive = rbt.MoveJ(coords, desc_pos=coordsLine, tool=tool_val, user=user_val, vel=move_speed, acc=acceleration)
-
-            print(f"Point '{point_name}' reached. Return value: {errorDrive}")
-            
-        return True
-
-    except Exception as e:
-        print(f"Error moving: {e}")
-        return False
-
-
-def shutdown_robot():
-    """Disconnects from the robot."""
-    global IS_INITIALIZED
-    try:
-        rbt.RobotEnable(0)
-        print("Robot shut down.")
-        IS_INITIALIZED = False
-    except:
-        print("Error disconnecting.")
-
-
-@register()
-def pick_up_from_pickupstation(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
-    """Pick up the samples from the pickup station."""
-    execute_pick_up_movement(
-        points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
-        speed=speed,
-        danger_speed=dangerSpeed,
-        acceleration=acceleration
-        )
-    
-
-@register()
-def release_at_pickupstation(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
-    """Release the samples at the pickup station."""
-    execute_release_movement(
-        points="./control-points/pick_up_pickupstation_{}.json".format(sample), 
-        speed=speed,
-        danger_speed=dangerSpeed,
-        acceleration=acceleration
-        )
-
-
-@register()
-def release_at_opentrons(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
-    """Move the samples into the Opentrons."""
-    execute_release_movement(
-        points="./control-points/pick_up_opentrons_{}.json".format(sample), 
-        speed=speed,
-        danger_speed=dangerSpeed,
-        acceleration=acceleration
-        )
-
-
-@register()
-def pick_up_opentrons(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
-    """Pick up the samples from the Opentrons."""
-    execute_pick_up_movement(
-        points="./control-points/pick_up_opentrons_{}.json".format(sample), 
-        speed=speed,
-        danger_speed=dangerSpeed,
-        acceleration=acceleration
-        )
-
-
-@register()
-def release_at_frame(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
-    """Move the samples onto the FRAME."""
-    execute_release_movement(
-        points="./control-points/pick_up_frame.json",
-        speed=speed,
-        danger_speed=dangerSpeed,
-        acceleration=acceleration
-        )
-
-
-@register()
-def pick_up_frame(sample: str, speed: int = 90, acceleration: int = 30, dangerSpeed: int = 20):
-    """Pick up the samples from the FRAME."""
-    execute_pick_up_movement(
-        points="./control-points/pick_up_frame.json",
-        speed=speed,
-        danger_speed=dangerSpeed,
-        acceleration=acceleration
-        )
-    
-
-@register()
-def init_robot_and_gripper():
-    """Initialize the robot and gripper."""
-    init_robot()
-    init_gripper()
-    print("Robot and gripper initialized successfully.")
-
-
-@register()
-def open_grip():
-    """Open the gripper."""
-    try:
-        open_gripper()
-        print("Gripper opened successfully.")
-    except Exception as e:
-        print(f"Error opening gripper: {e}")
-
-
-@register()
-def close_grip():
-    """Close the gripper."""
-    try:
-        close_gripper()
-        print("Gripper closed successfully.")
-    except Exception as e:
-        print(f"Error closing gripper: {e}")
-
-
-@register()
-def home_robot(move_speed: int = 30, acceleration: int = 30):
-    """Move the robot to the home position. ATTENTION: The robot will take the shortest path to the home position, so make sure that the way is clear, or move the arm manually to a safe position before homing."""
-    points = load_teach_points("./control-points/home_robot.json")
-    coords = [float(x) for x in points['home'][6:12]]
-
-    try:
-        rbt.MoveJ(coords, tool=1, user=1, vel=move_speed, acc=acceleration)
-        print("Robot homed successfully.")
-    except Exception as e:
-        print(f"Error homing robot: {e}")
-    
 
 if __name__ == "__main__":
-    app_name = os.getenv("ARKITEKT_APPNAME", "farinogale")
-    init_robot()
-    init_gripper()
-    if app_name == "":
-        print("ARKITEKT_APPNAME is not set. Please set the ARKITEKT_APPNAME environment variable. For example put it in .env file.")
-        exit(1)
-    app_url = os.getenv("ARKITEKT_URL", "go.arkitekt.live")
-    app = easy(identifier=app_name, url=app_url, redeem_token=os.getenv("REDEEM_TOKEN"))
-    app.enter()
-    app.run()
+    serve(app, CONFIG, int(os.getenv("PORT", "8080")))

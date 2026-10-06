@@ -1,0 +1,52 @@
+# Fairino arm: Arkitekt app settings. On the Pi this file is /home/pi/arkitekt/fairino/config.yaml
+# and the binding page (http://<pi>/fairino/) edits it. Saving there restarts the app.
+
+app: fairinogale          # Arkitekt app identifier; protocolapp declares this name
+
+robot:
+  ip: 192.168.178.200     # the arm's controller (fairinogale's setup used 192.168.5.1)
+  mock: false             # true: no arm, every move is only printed
+
+gripper:
+  open: 50                # MoveGripper position for "open"
+  close: 90               # ... for "closed on a slide" (fairinogale's setup used 95)
+  initial: 90             # where init_robot_and_gripper leaves it
+  company: 6              # SetGripperConfig: gripper vendor and device
+  device: 0
+  jaw: 1
+
+# Defaults for pick_up / release_at; a call can override them.
+speed: 20                 # % joint speed outside danger zones
+acceleration: 70          # %
+danger_speed: 10          # % at danger, linear and gripper points
+
+# Teach-point files, relative to this file. Record new ones with teach.py.
+points_dir: control-points
+home_file: home_robot.json
+
+# A station is one teach-point file. The files below come from two installations:
+# re-teach the ones for yours before driving the arm.
+stations:
+  # Round trip: the file lists every pose in driving order, including the way back.
+  # Suffixes: _danger (slow), _open-gripper, _close-gripper. Release drives it backwards.
+  frame:
+    file: pick_up_frame.json
+
+  # Out and back: home, move1..moveN; the arm drives out to moveN and back the same way.
+  # linear: MoveL at danger_speed. open/close: gripper on the way out.
+  opentrons:
+    file: jena/opentrons.json
+    out_and_back: true
+    pick: {linear: [move7, move8, move9], open: [move6], close: [move9]}
+    release: {linear: [move7, move8], open: [move8]}
+  pickupstation:
+    file: jena/pickupstation.json
+    out_and_back: true
+    pick: {linear: [move6, move7], open: [move5], close: [move7]}
+    release: {linear: [move6, move7], open: [move7]}
+
+  # fairinogale's versions, one file per slot ({sample} comes from the call, e.g. Box1_A1):
+  # opentrons:
+  #   file: pick_up_opentrons_{sample}.json
+  # pickupstation:
+  #   file: pick_up_pickupstation_{sample}.json

@@ -1,9 +1,11 @@
 [project]
 name = "fairinogale"
-version = "0.1.0"
-description = "Exposes robot pick-and-place routines as callable Arkitekt node so they can be orchestrated from any Arkitekt workflow."
+version = "1.0.0"
+description = "Fairino robot arm as an Arkitekt app: pick-and-place routines between the stations of a staining workflow."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "arkitekt-next>=0.42.0",
+    "arkitekt[rekuest]>=5.0.1,<6",
+    "fakts>=5.4",  # arkitekt_bind.py: the device-code hook takes one DeviceCodeChallenge
+    "pyyaml>=6",
 ]

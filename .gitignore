@@ -14,3 +14,5 @@ wheels/
 old/
 *.DS_Store
 .arkitekt_next/*
+config.yaml
+.state/

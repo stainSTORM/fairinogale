@@ -49,18 +49,22 @@ class MockRPC:
         print(f"[MOCK] Tool coordinate system set to {tool}")
         return True
 
-    def MoveJ(self, joints: List[float], tool: int, user: int, vel: int = 30, acc: int = 30) -> bool:
-        """Move robot to joint position"""
+    def MoveJ(self, joints: List[float], tool: int, user: int, desc_pos=None, vel: int = 30, acc: int = 30, **_) -> int:
+        """Move robot to joint position. Like the SDK, 0 means success."""
         print(f"[MOCK] MoveJ: joints={joints}, tool={tool}, user={user}, vel={vel}, acc={acc}")
         self.joint_positions = list(joints)
         time.sleep(0.1)  # Simulate movement time
-        return True
+        return 0
 
-    def MoveL(self, pose: List[float], tool: int, user: int, vel: int = 30) -> bool:
-        """Move robot linearly to cartesian position"""
+    def MoveL(self, pose: List[float], tool: int, user: int, vel: int = 30, acc: int = 0, **_) -> int:
+        """Move robot linearly to cartesian position. Like the SDK, 0 means success."""
         print(f"[MOCK] MoveL: pose={pose}, tool={tool}, user={user}, vel={vel}")
         time.sleep(0.1)  # Simulate movement time
-        return True
+        return 0
+
+    def GetRobotTeachingPoint(self, name: str):
+        """A made-up teach point in the SDK's layout: pose, joints, tool, user, ..."""
+        return 0, [0.0] * 6 + list(self.joint_positions) + [1.0, 1.0, 100.0, 100.0, 0.0, 0.0, 0.0, 0.0]
 
     def Home(self) -> bool:
         """Move robot to home position"""
