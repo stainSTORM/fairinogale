@@ -113,16 +113,13 @@ the branch name.
 
 ## Raspberry Pi
 
-The openUC2 OS pallet ([openUC2/os-rpi](https://github.com/openUC2/os-rpi)) deploys this container
-as `fairino`. The `os-rpi-arkitekt` SD card image has it switched on. On another openUC2 OS
-machine:
+The Arkitekt robot pallet (branch
+[`arkitekt-service` of openUC2/os-rpi](https://github.com/openUC2/os-rpi/tree/arkitekt-service))
+deploys this container as `fairino`, switched on, in its `os-rpi-arkitekt` SD card image. The
+microscope pallet on `edge` does not have it. The page is linked from the machine's home page.
 
-```bash
-forklift plt enable-depl fairino && forklift plt apply
-```
-
-The config and teach points then live in `/home/pi/arkitekt/fairino/`. To ship a new version,
-push here, then set the new `sha-<commit>` tag in os-rpi's `deployments/fairino.pkg/deployment.compose.yml`.
+On the Pi, the config and teach points live in `/home/pi/arkitekt/fairino/`. To ship a new version,
+push here, then set the new `sha-<commit>` tag in that branch's `deployments/fairino.pkg/deployment.compose.yml`.
 
 ## fairino-python-sdk
 

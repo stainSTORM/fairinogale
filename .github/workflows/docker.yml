@@ -2,7 +2,7 @@ name: docker
 
 # Builds ghcr.io/stainstorm/fairinogale for the Raspberry Pi (arm64) and PCs (amd64).
 # Every push to a branch publishes a sha-<commit> tag (pull requests only build), which the
-# openUC2 OS pallet (github.com/openUC2/os-rpi, deployments/fairino.pkg) pins.
+# Arkitekt robot pallet (github.com/openUC2/os-rpi, branch arkitekt-service, deployments/fairino.pkg) pins.
 on:
   push:
     branches: ['**']
