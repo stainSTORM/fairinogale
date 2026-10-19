@@ -1,6 +1,6 @@
 """Bind a device app to an Arkitekt server from a small web page.
 
-The same file lives in every device repo (fairinogale, OT2windy). Keep the copies identical.
+The same file lives in every device repo (fairinogale, OT2windy_service). Keep the copies identical.
 
     from arkitekt_bind import serve
     serve(app, "config.yaml")  # blocks

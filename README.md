@@ -98,7 +98,7 @@ The page on port 8080 (on the Pi: `http://<pi>/fairino/`):
 without TLS (e.g. a NAS); the session token then travels unencrypted. The page also edits
 `config.yaml`: **Save and restart** checks the YAML, writes it and restarts the app.
 
-`arkitekt_bind.py` is the same file in fairinogale and OT2windy. Keep the copies identical.
+`arkitekt_bind.py` is the same file in fairinogale and OT2windy_service. Keep the copies identical.
 
 ## Docker
 
@@ -132,7 +132,7 @@ The vendored [Fairino Python SDK](https://fair-documentation.readthedocs.io/en/l
 ```
 fairinogale/
 ├── app.py                 # the Arkitekt app: actions, stations, robot connection
-├── arkitekt_bind.py       # binding page and connection (same file in OT2windy)
+├── arkitekt_bind.py       # binding page and connection (same file in OT2windy_service)
 ├── teach.py               # read teach points from the controller into a station file
 ├── config.example.yaml    # copied to config.yaml on the first start
 ├── control-points/        # teach-point files (jena/: the Jena installation)
