@@ -40,6 +40,11 @@ parser.add_argument("--jog", type=float, default=10.0, help="mount: length of th
 parser.add_argument("--yes", action="store_true", help="do not ask before the arm moves")
 args = parser.parse_args()
 
+EXPECTED = (app.VisionError, app.GripFailed, app.NotAtLookPoint, ValueError)  # no traceback for these
+sys.excepthook = lambda kind, error, trace: (
+    print(f"Failed ({kind.__name__}): {error}", file=sys.stderr) if isinstance(error, EXPECTED)
+    else sys.__excepthook__(kind, error, trace))
+
 task = app.ConsoleTask()
 speeds = app.cfg["speed"], app.cfg["acceleration"], app.cfg["danger_speed"]
 

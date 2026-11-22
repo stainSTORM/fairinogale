@@ -11,8 +11,10 @@ It runs as a container on the openUC2 OS Raspberry Pi image (see
 
 | Action | Arguments | What it does |
 |---|---|---|
-| `pick_up` | `station`, `sample`, `speed`, `acceleration`, `danger_speed` | Drives to the station, grips the slide, comes back |
+| `pick_up` | `station`, `sample`, `speed`, `acceleration`, `danger_speed`, `correct` | Drives to the station, grips the slide, comes back |
 | `release_at` | same | Drives to the station, puts the slide down, comes back |
+| `check_station` | `station`, `sample`, speeds | Drives to the station's look point, compares its tags with the saved reference, comes back; returns a `StationCheck` |
+| `save_station_reference` | same | Drives to the look point and saves the view as the station's reference |
 | `init_robot_and_gripper` | | Enables the arm in automatic mode, activates the gripper |
 | `open_grip`, `close_grip` | | |
 | `home_robot` | `speed`, `acceleration` | Straight to the home pose (shortest joint path: clear the way first) |
@@ -29,6 +31,25 @@ values in `config.yaml`.
   With `gripper.holding: [min, max]` in `config.yaml`, a pick fails when the jaws do not stop inside
   that range (they closed on air, or the carrier was lost on the way back). A gripper fault fails
   the action in any case.
+
+## Vision
+
+A station can carry AprilTags that a camera on the gripper looks at before the arm goes in. The arm
+then shifts the station's points by what the station moved since teaching, or backs out when it
+moved too far, its tags are hidden or the seat is not as expected. `correct: false` in a call
+drives the taught points.
+
+[docs/vision.md](docs/vision.md) has the instructions: printing and placing the tags
+([tags/](tags)), mounting the camera, teaching, the page at port 8093 and `debug.py`, which runs
+all of it from a terminal without Arkitekt. To try it without hardware:
+
+```bash
+FAIRINO_CONFIG=mock/cell.yaml uv run debug.py look opentrons --save --yes
+FAIRINO_CONFIG=mock/cell.yaml uv run app.py     # http://localhost:8093/
+uv run pytest                                   # the maths and the driving, against the mock
+```
+
+This is a first draft: it has run against the mock arm and a simulated camera only.
 
 ## Configuration
 
@@ -135,12 +156,18 @@ The vendored [Fairino Python SDK](https://fair-documentation.readthedocs.io/en/l
 
 ```
 fairinogale/
-├── app.py                 # the Arkitekt app: actions, stations, robot connection
+├── app.py                 # the Arkitekt app: actions, stations, robot connection, driving
+├── vision.py              # AprilTags: a station's move since teaching (no robot, no Arkitekt)
+├── vision_ui.py           # the vision page: live image, measurement, save reference
+├── debug.py               # the same functions from a terminal, without Arkitekt
+├── tags.py                # makes the printable tag sheets in tags/
 ├── arkitekt_bind.py       # binding page and connection (same file in OT2windy_service)
 ├── teach.py               # read teach points from the controller into a station file
 ├── config.example.yaml    # copied to config.yaml on the first start
 ├── control-points/        # teach-point files (jena/: the Jena installation)
-├── mock/MockRPC.py        # stand-in for the SDK when robot.mock is set
+├── docs/vision.md         # instructions for the tags, the camera and teaching
+├── mock/                  # MockRPC.py and MockCamera.py stand in for arm and camera; cell.yaml
+├── tests/                 # uv run pytest
 ├── testing/               # older standalone test scripts
 └── fairino-python-sdk/    # vendored Fairino SDK
 ```
