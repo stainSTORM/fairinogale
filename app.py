@@ -46,10 +46,10 @@ CONFIG = Path(os.getenv("FAIRINO_CONFIG", HERE / "config.yaml"))
 if not CONFIG.exists():  # first start: copy the defaults where they can be edited
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(HERE / "config.example.yaml", CONFIG)
-    if not (CONFIG.parent / "control-points").exists():
-        shutil.copytree(HERE / "control-points", CONFIG.parent / "control-points")
 cfg = yaml.safe_load(CONFIG.read_text())
 POINTS = CONFIG.parent / cfg.get("points_dir", "control-points")
+if not POINTS.exists():  # start from the shipped teach points
+    shutil.copytree(HERE / "control-points", POINTS)
 STATIONS = list(cfg["stations"])
 VISION = cfg.get("vision") or {}
 TAG_SIZE = VISION.get("tag_size_mm", 30.0)  # edge of the printed tag's black square
@@ -88,6 +88,10 @@ class StationMoved(VisionError):
 
 class CarrierMisplaced(VisionError):
     """A carrier is on the seat where none should be, or the other way round."""
+
+
+class NotAtLookPoint(RuntimeError):
+    """A reference is to be saved, but the arm does not stand at the look point."""
 
 
 class ConsoleTask:
@@ -338,8 +342,8 @@ def save_reference(station: str, sample: str = "", look: str | None = None, forc
         reply = robot().GetActualJointPosDegree()
         joints = reply[1] if isinstance(reply, tuple) and reply[0] == 0 else None
         if joints is None or max(abs(a - b) for a, b in zip(joints, points[look][6:12])) > 0.5:
-            raise RuntimeError(f"The arm is not at look point {look!r} of {file.name}: drive it "
-                               f"there first")
+            raise NotAtLookPoint(f"The arm is not at look point {look!r} of {file.name}: drive "
+                                 f"it there first")
     cam = camera(vis["camera"])
     vision.save_reference(file, look, cam, cam.grab(), vis.get("tags"), vis.get("carrier_tags", ()))
     return observe(station, sample, look)
@@ -587,4 +591,8 @@ def home_robot(speed: Speed = 30, acceleration: Acceleration = 30) -> None:
 
 
 if __name__ == "__main__":
+    if VISION:
+        import vision_ui
+
+        vision_ui.start(int(os.getenv("VISION_PORT", VISION.get("port", 8093))), sys.modules[__name__])
     serve(app, CONFIG, int(os.getenv("PORT", "8080")))

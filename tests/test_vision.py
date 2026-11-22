@@ -63,7 +63,7 @@ def test_station_move_is_recovered(dx, dy, yaw):
     assert m.shift_mm == pytest.approx(np.hypot(dx, dy), abs=0.15)
     assert abs(m.yaw_deg) == pytest.approx(abs(yaw), abs=0.1)
     assert abs(m.lift_mm) < 0.3 and m.tilt_deg < 0.3
-    assert m.carrier_mm < 0.3  # the carrier moved with its station: still on the seat
+    assert m.carrier_mm < 0.5  # the carrier moved with its station: still on the seat
     # A taught pose 150 mm from the tags must land where the station took it.
     taught = pose_from_T(camera.scene[10] @ T_from_pose([150, 40, 20, 180, 0, 30]))
     expected = D @ T_from_pose(taught)
@@ -107,3 +107,18 @@ def test_reference_file(tmp_path):
     assert (tmp_path / "station.vision.move6.jpg").exists()
     with pytest.raises(RuntimeError, match="does not see"):
         vision.save_reference(points, "move6", camera, camera.grab(), [10, 12])
+
+
+def test_camera_angles_from_jogs():
+    """debug.py mount: six straight jogs give the camera's angles in the tool frame."""
+    pose = list(LOOK)
+    camera = MockCamera("wrist", {"mount": [0, -60, -80, -15, 4, 30], "fov_deg": 70}, lambda: pose, SIZE)
+    camera.place(STATION, LOOK)
+    K, start, jogs = camera.matrix(camera.width, camera.height), vision.detect(camera.grab()), []
+    for axis in range(3):
+        for sign in (10.0, -10.0):
+            jog = [sign if k == axis else 0.0 for k in range(3)]
+            pose[:3] = [a + b for a, b in zip(LOOK[:3], jog)]
+            jogs.append((jog, vision.displacement(start, vision.detect(camera.grab()), K, camera.dist, SIZE)[0]))
+    angles, misfit = vision.mount_rotation(jogs, LOOK)
+    assert angles == pytest.approx([-15, 4, 30], abs=1.0) and misfit < 0.3

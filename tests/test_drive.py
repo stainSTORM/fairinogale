@@ -10,7 +10,7 @@ import app
 import vision
 from vision import T_from_pose
 
-STATION, TAGS, CARRIER = "opentrons", [10, 11], [100]
+STATION, TAGS, CARRIER = "opentrons", [10, 11], [100]  # as in mock/cell.yaml
 TASK = app.ConsoleTask()
 
 

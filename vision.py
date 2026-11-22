@@ -132,23 +132,47 @@ def tag_points(corners, K, dist, size: float) -> tuple[np.ndarray, np.ndarray]:
     return square @ R.T + tvec.ravel(), R[:, 2]
 
 
+def model(tags: dict, K, dist, size: float) -> tuple[np.ndarray, np.ndarray]:
+    """The corners of a set of tags in the camera frame (4n x 3, in the order of sorted ids) and
+    the normal of the face they sit on.
+
+    One small tag gives its distance and tilt only roughly. Tags on one flat face are therefore
+    put on a common plane, fitted through all their corners: each corner moves along its line of
+    sight onto that plane. Tags that are not on one face (more than 1.5 mm off the plane) stay as
+    they were found.
+    """
+    ids = sorted(tags)
+    placed = [tag_points(tags[i], K, dist, size) for i in ids]
+    points, normal = np.vstack([p for p, _ in placed]), np.mean([n for _, n in placed], axis=0)
+    normal /= np.linalg.norm(normal)
+    if len(ids) > 1:
+        centre = points.mean(axis=0)
+        fitted = np.linalg.svd(points - centre)[2][2]  # direction of least spread
+        if np.sqrt((((points - centre) @ fitted) ** 2).mean()) < 1.5:
+            normal = fitted if fitted @ normal > 0 else -fitted
+            seen = np.vstack([np.asarray(tags[i], dtype=float) for i in ids]).reshape(-1, 1, 2)
+            rays = np.hstack([cv2.undistortPoints(seen, K, dist).reshape(-1, 2), np.ones((len(seen), 1))])
+            points = rays * ((centre @ normal) / (rays @ normal))[:, None]
+    return points, normal
+
+
 def motion(reference: dict, now: dict, K, dist, size: float) -> tuple[np.ndarray, float]:
     """The rigid motion of a set of tags between the reference image and now.
 
     Returns the 4x4 transform in the camera frame (p_now = M p_reference) and the reprojection
-    error in pixels. The corners of the reference tags, placed in space, are the model that is
-    fitted to the corners seen now; with tags far apart the turn is measured well.
+    error in pixels. The corners of the reference tags, placed in space (model), are fitted to the
+    corners seen now; with tags far apart the turn is measured well.
     """
     ids = sorted(set(reference) & set(now))
     if not ids:
         raise RuntimeError("No tag is in both the reference and the image")
-    model = np.vstack([tag_points(reference[i], K, dist, size)[0] for i in ids])
+    points = model({i: reference[i] for i in ids}, K, dist, size)[0]
     seen = np.vstack([np.asarray(now[i], dtype=float) for i in ids])
-    ok, rvec, tvec = cv2.solvePnP(model, seen, K, dist, rvec=np.zeros((3, 1)), tvec=np.zeros((3, 1)),
+    ok, rvec, tvec = cv2.solvePnP(points, seen, K, dist, rvec=np.zeros((3, 1)), tvec=np.zeros((3, 1)),
                                   useExtrinsicGuess=True, flags=cv2.SOLVEPNP_ITERATIVE)
     if not ok:
         raise RuntimeError("Could not fit the reference tags to the image")
-    projected = cv2.projectPoints(model, rvec, tvec, K, dist)[0].reshape(-1, 2)
+    projected = cv2.projectPoints(points, rvec, tvec, K, dist)[0].reshape(-1, 2)
     M = np.eye(4)
     M[:3, :3], M[:3, 3] = cv2.Rodrigues(rvec)[0], tvec.ravel()
     return M, float(np.sqrt(((projected - seen) ** 2).sum(axis=1).mean()))
@@ -201,9 +225,8 @@ def measure(reference: dict, now: dict, camera: Camera, look_pose, size: float,
     ids = sorted(set(saved) & set(now))
 
     # The station's plane, from the reference tags: where they lie and which way they face.
-    placed = [tag_points(saved[i], K, dist, size) for i in ids]
-    origin_cam = np.vstack([p for p, _ in placed]).mean(axis=0)
-    normal_cam = np.mean([n for _, n in placed], axis=0)
+    placed, normal_cam = model({i: saved[i] for i in ids}, K, dist, size)
+    origin_cam = placed.mean(axis=0)
     X = T_from_pose(look_pose) @ camera.mount  # camera in the robot's user frame, at the look
     D = X @ M @ np.linalg.inv(X)               # the same motion, in the user frame
     origin = (X @ np.append(origin_cam, 1))[:3]
@@ -231,6 +254,32 @@ def measure(reference: dict, now: dict, camera: Camera, look_pose, size: float,
             if result.carrier_mm is None or distance < result.carrier_mm:
                 result.carrier_mm, result.carrier_tag = distance, i
     return result
+
+
+def displacement(reference: dict, now: dict, K, dist, size: float) -> tuple[np.ndarray, float]:
+    """How far the middle of a set of tags moved between two images (mm, camera frame), and the
+    reprojection error of the fit."""
+    M, error = motion(reference, now, K, dist, size)
+    middle = model({i: reference[i] for i in set(reference) & set(now)}, K, dist, size)[0].mean(axis=0)
+    return (M @ np.append(middle, 1))[:3] - middle, error
+
+
+def mount_rotation(jogs, look_pose) -> tuple[list[float], float]:
+    """The camera's angles in the tool frame, from straight jogs of the arm away from a look point.
+
+    jogs: [(the jog [dx, dy, dz] in the user frame, displacement() of the tags between the look
+    point and the jogged pose)]. A camera moved by t sees the scene move by -t, so the directions
+    the tags appear to move in give the camera's orientation. Returns [rx, ry, rz] for the
+    camera's mount in config.yaml and the misfit in mm (large: wrong tag size, or the tags moved).
+    """
+    moved = np.array([-np.asarray(jog, dtype=float) for jog, _ in jogs])  # user frame
+    seen = np.array([d for _, d in jogs])                                 # camera frame
+    U, _, Vt = np.linalg.svd(moved.T @ seen)  # the rotation R with R @ seen = moved, least squares
+    R = U @ np.diag([1, 1, np.linalg.det(U @ Vt)]) @ Vt
+    misfit = float(np.sqrt(((seen @ R.T - moved) ** 2).sum(axis=1).mean()))
+    T = np.eye(4)
+    T[:3, :3] = T_from_pose(look_pose)[:3, :3].T @ R
+    return pose_from_T(T)[3:], misfit
 
 
 # --- references --------------------------------------------------------------------------------
@@ -279,7 +328,7 @@ def annotate(image: np.ndarray, now: dict, reference: dict | None = None) -> np.
         outlines = [np.array(c) for c in reference["tags"].values()]
         if reference.get("carrier") is not None:
             outlines.append(np.array(reference["carrier"]))
-        cv2.polylines(out, [c.astype(np.int32) for c in outlines], True, (0, 140, 255), 1, cv2.LINE_AA)
+        cv2.polylines(out, [c.astype(np.int32) for c in outlines], True, (0, 140, 255), 2, cv2.LINE_AA)
     for i, c in now.items():
         cv2.polylines(out, [c.astype(np.int32)], True, (0, 220, 0), 2, cv2.LINE_AA)
         cv2.circle(out, tuple(int(v) for v in c[0]), 4, (0, 220, 0), -1)

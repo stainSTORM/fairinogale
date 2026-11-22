@@ -16,3 +16,5 @@ old/
 .arkitekt_next/*
 config.yaml
 .state/
+mock/points/
+debug.jpg
