@@ -14,6 +14,10 @@ gripper:
   company: 6              # SetGripperConfig: gripper vendor and device
   device: 0
   jaw: 1
+  # Jaw position (%) the controller reports when the jaws hold a carrier, as [min, max]. A pick
+  # whose jaws end up outside fails ("no carrier in the gripper"). Without it the position is only
+  # logged: pick a few times with and without a carrier, read the log, then set the range.
+  # holding: [80, 88]
 
 # Defaults for pick_up / release_at; a call can override them.
 speed: 20                 # % joint speed outside danger zones

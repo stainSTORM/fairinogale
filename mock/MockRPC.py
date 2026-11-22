@@ -23,6 +23,8 @@ class MockRPC:
             "force": 0,
             "velocity": 0,
         }
+        # Where the jaws stop when they close on a carrier (%); None: nothing in the gripper.
+        self.gripper_stop: Optional[int] = None
         print(f"[MOCK] Connecting to robot at {ip}")
 
     def RobotEnable(self, enable: int) -> bool:
@@ -121,9 +123,19 @@ class MockRPC:
                 "rot_torque": rot_torque,
             }
         )
+        if self.gripper_stop is not None:
+            self.gripper_state["position"] = min(position, self.gripper_stop)
         print(f"[MOCK] Gripper move: {self.gripper_state}")
         time.sleep(0.05)
         return 0
+
+    def GetGripperMotionDone(self) -> Tuple[int, List[int]]:
+        """(error, [fault, status]); status 1 = the jaws have stopped."""
+        return 0, [0, 1]
+
+    def GetGripperCurPosition(self) -> Tuple[int, int, int]:
+        """(error, fault, position in %), like the SDK."""
+        return 0, 0, self.gripper_state["position"]
 
     def GetActualJointPosDegree(self) -> Tuple[int, List[float]]:
         """Return mock joint positions"""

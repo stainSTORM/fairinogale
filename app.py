@@ -21,6 +21,7 @@ import platform
 import shutil
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -90,10 +91,47 @@ def check(error, what: str) -> None:
         raise RuntimeError(f"{what} failed with Fairino error code {error}")
 
 
-def gripper(position: int, velocity: int) -> None:
-    g = cfg["gripper"]
-    check(robot().MoveGripper(g.get("jaw", 1), position, velocity, 30, 10000, 0, 0, 0, 0, 0),
+class GripFailed(RuntimeError):
+    """The gripper reports a fault, or a jaw position outside gripper.holding after a pick."""
+
+
+def log(task, message: str) -> None:
+    """To the console and, when Arkitekt runs the action, to the task's log."""
+    print(message, flush=True)
+    try:
+        task.log(message)
+    except Exception:  # noqa: BLE001 - a log line must not stop a move
+        pass
+
+
+def gripper(position: int, velocity: int) -> float:
+    """Moves the jaws, waits for them to stop and returns the position the controller reports (%)."""
+    g, rbt = cfg["gripper"], robot()
+    check(rbt.MoveGripper(g.get("jaw", 1), position, velocity, 30, 10000, 0, 0, 0, 0, 0),
           f"gripper to {position}")
+    deadline = time.monotonic() + g.get("settle_s", 3.0)
+    while time.monotonic() < deadline:  # MoveGripper blocks, but the reported state lags behind
+        error, state = rbt.GetGripperMotionDone()
+        if error == 0 and state and state[1] == 1:
+            break
+        time.sleep(0.05)
+    return jaw_position()
+
+
+def jaw_position() -> float:
+    """The jaw position in % from the controller's state stream; a gripper fault raises."""
+    _, fault, position = robot().GetGripperCurPosition()
+    if fault:
+        raise GripFailed(f"The gripper reports fault {fault}")
+    return float(position)
+
+
+def check_holding(position: float, when: str) -> None:
+    """Fails a pick when the jaws are not where they stop on a carrier (gripper.holding)."""
+    holding = cfg["gripper"].get("holding")
+    if holding and not holding[0] <= position <= holding[1]:
+        raise GripFailed(f"Jaw position {position:.0f} % {when} is outside gripper.holding "
+                         f"{holding}: no carrier in the gripper")
 
 
 def drive(station: str, sample: str, release: bool, speed: int, acceleration: int,
@@ -138,10 +176,15 @@ def drive(station: str, sample: str, release: bool, speed: int, acceleration: in
         elif lower.endswith("close-gripper"):
             opens, closes = release, not release
         if opens:
-            gripper(g["open"], 30)
+            log(task, f"{name}: gripper open, jaws at {gripper(g['open'], 30):.0f} %")
         if closes:
-            gripper(g["close"], 50)
+            position = gripper(g["close"], 50)
+            log(task, f"{name}: gripper closed, jaws at {position:.0f} %")
+            if not release:
+                check_holding(position, f"after closing at {name}")
         task.progress(int(100 * (i + 1) / len(order)), name)
+    if not release:  # a carrier lost on the way back lets the jaws close further
+        check_holding(jaw_position(), "at the end of the pick")
 
 
 @app.action(locks=["robot"])
@@ -150,7 +193,8 @@ def pick_up(station: Station, sample: Sample = "", speed: Speed = cfg["speed"],
             danger_speed: DangerSpeed = cfg["danger_speed"], *, task: Task) -> None:
     """Pick Up
 
-    Drives to the station, grips the slide and comes back.
+    Drives to the station, grips the slide and comes back. Fails if the jaws do not stop where
+    they stop on a carrier (gripper.holding in config.yaml).
     """
     drive(station, sample, False, speed, acceleration, danger_speed, task)
 

@@ -25,6 +25,10 @@ values in `config.yaml`.
 - A move the controller rejects (non-zero error code) stops the sequence and fails the action.
   The old code printed the error and carried on.
 - Cancelling the task in Arkitekt stops the arm at the next teach point.
+- After every gripper move the app reads the jaw position back from the controller and logs it.
+  With `gripper.holding: [min, max]` in `config.yaml`, a pick fails when the jaws do not stop inside
+  that range (they closed on air, or the carrier was lost on the way back). A gripper fault fails
+  the action in any case.
 
 ## Configuration
 
