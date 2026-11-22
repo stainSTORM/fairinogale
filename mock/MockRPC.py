@@ -99,8 +99,8 @@ class MockRPC:
         self,
         jawnumber: int,
         position: int,
-        force: int,
         velocity: int,
+        force: int,
         maxtime: int,
         is_blocking: int,
         typ: int,
@@ -108,7 +108,7 @@ class MockRPC:
         rot_vel: int,
         rot_torque: int,
     ) -> int:
-        """Mock gripper movement"""
+        """Mock gripper movement, arguments in the SDK's order (pos, vel, force, ...)"""
         self.gripper_state.update(
             {
                 "jawnumber": jawnumber,
