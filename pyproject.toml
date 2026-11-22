@@ -6,6 +6,17 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "arkitekt[rekuest]>=5.0.1,<6",
-    "fakts>=5.4",  # arkitekt_bind.py: the device-code hook takes one DeviceCodeChallenge
+    "fakts>=5.4", # arkitekt_bind.py: the device-code hook takes one DeviceCodeChallenge
+    "numpy>=1.26",
+    "opencv-python-headless>=4.8",
     "pyyaml>=6",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

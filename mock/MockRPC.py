@@ -15,6 +15,7 @@ class MockRPC:
         self.current_user = 0
         self.current_tool = 0
         self.joint_positions = [0.0] * 6
+        self.tcp_pose = [0.0] * 6  # where the last move went: MockCamera looks from here
         self.gripper_config: Dict[str, int] = {}
         self.gripper_active = False
         self.gripper_state = {
@@ -25,6 +26,7 @@ class MockRPC:
         }
         # Where the jaws stop when they close on a carrier (%); None: nothing in the gripper.
         self.gripper_stop: Optional[int] = None
+        self.move_time = 0.1  # seconds a move takes
         print(f"[MOCK] Connecting to robot at {ip}")
 
     def RobotEnable(self, enable: int) -> bool:
@@ -55,13 +57,17 @@ class MockRPC:
         """Move robot to joint position. Like the SDK, 0 means success."""
         print(f"[MOCK] MoveJ: joints={joints}, tool={tool}, user={user}, vel={vel}, acc={acc}")
         self.joint_positions = list(joints)
-        time.sleep(0.1)  # Simulate movement time
+        if desc_pos is not None:
+            self.tcp_pose = list(desc_pos)
+        time.sleep(self.move_time)
         return 0
 
     def MoveL(self, pose: List[float], tool: int, user: int, vel: int = 30, acc: int = 0, **_) -> int:
         """Move robot linearly to cartesian position. Like the SDK, 0 means success."""
         print(f"[MOCK] MoveL: pose={pose}, tool={tool}, user={user}, vel={vel}")
-        time.sleep(0.1)  # Simulate movement time
+        self.tcp_pose = list(pose)
+        self.joint_positions = [0.0] * 6  # the mock has no kinematics: unknown after a linear move
+        time.sleep(self.move_time)
         return 0
 
     def GetRobotTeachingPoint(self, name: str):
@@ -137,7 +143,6 @@ class MockRPC:
         """(error, fault, position in %), like the SDK."""
         return 0, 0, self.gripper_state["position"]
 
-    def GetActualJointPosDegree(self) -> Tuple[int, List[float]]:
+    def GetActualJointPosDegree(self, flag: int = 1) -> Tuple[int, List[float]]:
         """Return mock joint positions"""
-        print(f"[MOCK] Reporting joint positions: {self.joint_positions}")
         return 0, list(self.joint_positions)
