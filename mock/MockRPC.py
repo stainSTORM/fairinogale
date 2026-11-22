@@ -27,6 +27,7 @@ class MockRPC:
         # Where the jaws stop when they close on a carrier (%); None: nothing in the gripper.
         self.gripper_stop: Optional[int] = None
         self.move_time = 0.1  # seconds a move takes
+        self.moves: List[Tuple[str, List[float]]] = []  # every move so far: ("J" or "L", pose)
         print(f"[MOCK] Connecting to robot at {ip}")
 
     def RobotEnable(self, enable: int) -> bool:
@@ -59,6 +60,7 @@ class MockRPC:
         self.joint_positions = list(joints)
         if desc_pos is not None:
             self.tcp_pose = list(desc_pos)
+        self.moves.append(("J", list(self.tcp_pose)))
         time.sleep(self.move_time)
         return 0
 
@@ -66,6 +68,7 @@ class MockRPC:
         """Move robot linearly to cartesian position. Like the SDK, 0 means success."""
         print(f"[MOCK] MoveL: pose={pose}, tool={tool}, user={user}, vel={vel}")
         self.tcp_pose = list(pose)
+        self.moves.append(("L", list(pose)))
         self.joint_positions = [0.0] * 6  # the mock has no kinematics: unknown after a linear move
         time.sleep(self.move_time)
         return 0
