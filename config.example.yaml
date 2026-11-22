@@ -32,7 +32,8 @@ home_file: home_robot.json
 # the arm shifts its points by what a station moved since teaching. Without this block, and
 # without a vision block in a station, the arm drives the taught points as before.
 # vision:
-#   tag_size_mm: 30         # edge of the printed tags' black square (tags/, family 36h11)
+#   tag_size_mm: 30         # edge of the black square of the station tags (tags/, 36h11)
+#   carrier_tag_size_mm: 15 # ... and of the carrier tags
 #   port: 8093              # the vision page: live image, measurement, save reference
 #   allow_motion: false     # true: the page may drive the arm to a look point and back
 #   cameras:

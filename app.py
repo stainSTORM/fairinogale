@@ -52,7 +52,8 @@ if not POINTS.exists():  # start from the shipped teach points
     shutil.copytree(HERE / "control-points", POINTS)
 STATIONS = list(cfg["stations"])
 VISION = cfg.get("vision") or {}
-TAG_SIZE = VISION.get("tag_size_mm", 30.0)  # edge of the printed tag's black square
+TAG_SIZE = VISION.get("tag_size_mm", 30.0)  # edge of the black square of the station tags
+CARRIER_TAG_SIZE = VISION.get("carrier_tag_size_mm", TAG_SIZE)  # ... and of the carrier tags
 
 app = App(cfg.get("app", "fairinogale"), "1.0.0", effects=Effects.IRREVERSIBLE)
 
@@ -264,7 +265,7 @@ def camera(name: str) -> vision.Camera:
                 look = station_points(station)[2][look_points(st)[0]][0:6]
                 carrier = list(vis.get("carrier_tags", []))[:1]
                 cam.place(vis["tags"], look)
-                cam.place(carrier, look, row=45)
+                cam.place(carrier, look, row=45, size=CARRIER_TAG_SIZE)
                 plane = cam.scene[vis["tags"][0]]
                 cam.move(list(vis["tags"]) + carrier, plane @ vision.T_from_pose([dx, dy, 0, 0, 0, yaw])
                          @ np.linalg.inv(plane))
@@ -297,7 +298,8 @@ def observe(station: str, sample: str = "", look: str | None = None) -> dict:
                                     f"{look} (the camera sees {sorted(now)})")
         return seen
     m = seen["measurement"] = vision.measure(reference, now, cam, points[look][0:6], TAG_SIZE,
-                                             vis.get("tags"), vis.get("carrier_tags", ()))
+                                             vis.get("tags"), vis.get("carrier_tags", ()),
+                                             CARRIER_TAG_SIZE)
     # How far the correction takes the points it applies to: limits and deadband refer to that.
     P = np.array(m.correction)
     travel = [np.linalg.norm((P @ vision.T_from_pose(points[n][0:6]))[:3, 3] - points[n][0:3])

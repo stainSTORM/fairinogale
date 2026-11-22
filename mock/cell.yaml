@@ -28,6 +28,7 @@ home_file: home_robot.json
 
 vision:
   tag_size_mm: 30
+  carrier_tag_size_mm: 15
   port: 8093
   allow_motion: true
   cameras:

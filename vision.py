@@ -210,11 +210,12 @@ class Measurement:
 
 
 def measure(reference: dict, now: dict, camera: Camera, look_pose, size: float,
-            station_tags=None, carrier_tags=()) -> Measurement:
+            station_tags=None, carrier_tags=(), carrier_size: float | None = None) -> Measurement:
     """Compares the tags seen now with a saved reference.
 
     reference: one entry of a .vision.json file (see save_reference). now: detect() of an image
-    taken with the tool at look_pose, the pose the reference was taken from.
+    taken with the tool at look_pose, the pose the reference was taken from. size: the edge of
+    the station tags' black square; carrier_size: that of the carrier tags, if it differs.
     """
     width, height = reference["size"]
     K, dist = camera.matrix(width, height), camera.dist
@@ -248,9 +249,10 @@ def measure(reference: dict, now: dict, camera: Camera, look_pose, size: float,
 
     # A carrier: how far is its tag from where the carrier's tag sat at teaching, on this station?
     if reference.get("carrier") is not None:
-        seat = (M @ np.append(tag_points(reference["carrier"], K, dist, size)[0].mean(axis=0), 1))[:3]
+        small = carrier_size or size
+        seat = (M @ np.append(tag_points(reference["carrier"], K, dist, small)[0].mean(axis=0), 1))[:3]
         for i in set(carrier_tags) & set(now):
-            distance = float(np.linalg.norm(tag_points(now[i], K, dist, size)[0].mean(axis=0) - seat))
+            distance = float(np.linalg.norm(tag_points(now[i], K, dist, small)[0].mean(axis=0) - seat))
             if result.carrier_mm is None or distance < result.carrier_mm:
                 result.carrier_mm, result.carrier_tag = distance, i
     return result

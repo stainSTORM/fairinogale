@@ -18,14 +18,18 @@ class MockCamera(Camera):
         self.tcp_pose, self.tag_size = tcp_pose, tag_size  # tcp_pose(): the arm's pose right now
         self.width, self.height = spec.get("width", 1280), spec.get("height", 720)
         self.scene: dict[int, np.ndarray] = {}  # tag id -> 4x4 pose of the tag in the user frame
+        self.sizes: dict[int, float] = {}       # tags of another size than tag_size
 
-    def place(self, ids, look_pose, distance: float = 220.0, spacing: float = 80.0, row: float = 0.0):
+    def place(self, ids, look_pose, distance: float = 220.0, spacing: float = 80.0, row: float = 0.0,
+              size: float | None = None):
         """Puts tags side by side in front of the camera as it stands at look_pose, tilted by 20 deg."""
         tilt = T_from_pose([0, row, distance, 180 + 20, 0, 0])  # the tags face the camera
         for k, i in enumerate(ids):
             offset = np.eye(4)
             offset[0, 3] = (k - (len(ids) - 1) / 2) * spacing
             self.scene[i] = T_from_pose(look_pose) @ self.mount @ tilt @ offset
+            if size:
+                self.sizes[i] = size
 
     def move(self, ids, D: np.ndarray) -> None:
         """Moves tags by a 4x4 transform given in the user frame."""
@@ -40,7 +44,7 @@ class MockCamera(Camera):
         image = np.full(size[::-1], 150, np.uint8)
         cells = 10  # 8 cells of tag and one cell of white margin on each side
         for i, pose in self.scene.items():
-            h = self.tag_size / 8 * cells / 2
+            h = self.sizes.get(i, self.tag_size) / 8 * cells / 2
             corners = (to_camera @ pose @ np.array([[-h, h, 0, 1], [h, h, 0, 1], [h, -h, 0, 1],
                                                     [-h, -h, 0, 1]], dtype=float).T).T[:, :3]
             if (corners[:, 2] < 10).any():
