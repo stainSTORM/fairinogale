@@ -10,7 +10,10 @@ connection state. Enter the server and press Bind: the page shows a code and an 
 (the device-code login). Approve it in any browser and the app starts providing its actions.
 The login is stored, so the device reconnects by itself after a restart.
 
-The page also edits config.yaml. Saving restarts the process so the new settings apply.
+The page also edits config.yaml. Saving restarts the process so the new settings apply. An app
+restarts itself the same way with restart_soon(), e.g. when a new choice for a dropdown appears.
+A restart waits until the device is done: serve(..., busy=lock) names the lock the app holds
+while it moves.
 
 Everything the device keeps sits next to config.yaml, in .state/: the stored login (fakts), the
 chosen server (bind.json) and the rekuest journal. Delete .state/ to start over.
@@ -29,6 +32,29 @@ import yaml
 
 DEFAULT_URL = "https://go.arkitekt.live"
 RECONNECT_DELAY_S = 30.0
+
+
+_binder = None
+_busy = None  # held by the app while the device moves; a restart waits for it
+
+
+def restart_soon(reason: str, delay: float = 2.0) -> None:
+    """Restart the process in *delay* s, once the device is idle, so the app re-registers.
+
+    The delay lets the action that asks for it report back first. Choices of a port are fixed
+    when the app registers, so a new station or protocol shows up in the dropdown only then.
+    """
+    def restart():
+        if _busy is not None:
+            _busy.acquire()  # never released: the process is replaced
+        print(f"{reason}: restarting", flush=True)
+        if _binder is not None:
+            _binder.cancel()
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
+    timer = threading.Timer(delay, restart)
+    timer.daemon = True
+    timer.start()
 
 
 class StoredLoginInvalid(RuntimeError):
@@ -238,7 +264,7 @@ async function loadConfig() {
 }
 async function saveConfig() {
   const r = await (await fetch('api/config', {method: 'POST', body: config.value})).json();
-  saved.textContent = r.error || 'Saved. Restarting…';
+  saved.textContent = r.error || 'Saved. Restarting once the device is idle…';
   saved.className = r.error ? 'error' : '';
   if (!r.error) setTimeout(() => location.reload(), 4000);
 }
@@ -247,13 +273,18 @@ poll(); loadConfig(); setInterval(poll, 2000);
 """
 
 
-def serve(app, config_path, port: int = 8080) -> None:
-    """Serve the binding page on *port* and reconnect if bound before. Blocks."""
+def serve(app, config_path, port: int = 8080, busy=None) -> None:
+    """Serve the binding page on *port* and reconnect if bound before. Blocks.
+
+    *busy* is a lock the app holds while the device moves: a restart waits for it.
+    """
+    global _binder, _busy
     config_path = Path(config_path).resolve()
     state = config_path.parent / ".state"
     os.environ.setdefault("XDG_STATE_HOME", str(state))  # the stored login (Linux)
     os.environ.setdefault("REKUEST_JOURNAL_PATH", str(state / "rekuest_journal.db"))
-    binder = Binder(app, state)
+    binder = _binder = Binder(app, state)
+    _busy = busy
 
     class Handler(BaseHTTPRequestHandler):
         def _reply(self, body, kind="application/json"):
@@ -290,17 +321,12 @@ def serve(app, config_path, port: int = 8080) -> None:
                     return self._reply({"error": f"Not valid YAML: {e}"})
                 config_path.write_text(body)
                 self._reply({"saved": True})
-                threading.Timer(0.5, _restart).start()
+                restart_soon("config.yaml changed", delay=0.5)
             else:
                 self.send_error(404)
 
         def log_message(self, *args):  # keep the console for the app's own output
             pass
-
-    def _restart():
-        print("config.yaml changed: restarting", flush=True)
-        binder.cancel()
-        os.execv(sys.executable, [sys.executable, *sys.argv])
 
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"Binding page on http://0.0.0.0:{port}/ (config: {config_path})", flush=True)

@@ -13,15 +13,20 @@ It runs as a container on the openUC2 OS Raspberry Pi image (see
 |---|---|---|
 | `pick_up` | `station`, `sample`, `speed`, `acceleration`, `danger_speed` | Drives to the station, grips the slide, comes back |
 | `release_at` | same | Drives to the station, puts the slide down, comes back |
-| `init_robot_and_gripper` | | Enables the arm in automatic mode, activates the gripper |
+| `init_robot_and_gripper` | | Enables the arm in automatic mode (also after teaching in manual mode), activates the gripper |
 | `open_grip`, `close_grip` | | |
 | `home_robot` | `speed`, `acceleration` | Straight to the home pose (shortest joint path: clear the way first) |
+| `teach_point` | `station`, `point`, `sample` | Stores where the arm is now as a named point of the station. Does not move the arm |
+| `import_teach_points` | `station`, `names`, `sample`, `merge` | Copies points saved by name on the controller into the station. Does not move the arm |
+| `upload_points` | `station`, `points` (JSON), `sample`, `merge` | Stores pasted coordinates for the station |
+| `export_points` | `station`, `sample` | The station's points as JSON |
 
-`station` is a dropdown of the stations in `config.yaml`. `sample` fills `{sample}` in a station's
+`station` in `pick_up` and `release_at` is a dropdown of the stations (see
+[Stations and teach points](#stations-and-teach-points)). `sample` fills `{sample}` in a station's
 file name (for example `Box1_A1`); stations without `{sample}` ignore it. The speeds default to the
 values in `config.yaml`.
 
-- Every action holds one `robot` lock, so calls run one at a time.
+- Every action except `export_points` holds one `robot` lock, so calls run one at a time.
 - A move the controller rejects (non-zero error code) stops the sequence and fails the action.
   The old code printed the error and carried on.
 - Cancelling the task in Arkitekt stops the arm at the next teach point.
@@ -34,7 +39,8 @@ explains each key. `robot.mock: true` runs without an arm and only prints the mo
 
 ### Stations and teach points
 
-A station is a teach-point file in `control-points/`. Two layouts work:
+A station is a teach-point file in `control-points/`: the stations `config.yaml` lists, and every
+other `.json` file there, under its file name. Two layouts work:
 
 - **Round trip** (the original fairinogale layout, e.g. `pick_up_frame.json`): every pose in
   driving order, including the way back (`r_...` points). Name suffixes set the behaviour:
@@ -56,21 +62,49 @@ stations:
     release: {linear: [move7, move8], open: [move8]}
 ```
 
+A station `config.yaml` does not list is a round trip. Give it a `config.yaml` entry for the out
+and back layout or another file name.
+
 The shipped teach points come from two installations (`frame` from the fairinogale setup,
 `opentrons` and `pickupstation` from the Jena setup). Teach points belong to one arm and one
 bench, so re-teach them for yours before driving the arm.
 
 ### Teaching
 
-Name the poses in the Fairino teach interface, then read them from the controller into a station
-file. The points are saved in the order given, which is the order the arm drives them:
+`control-points/` sits next to `config.yaml`: on the Pi that is
+`/home/pi/arkitekt/fairino/control-points/`, a bind mount, so taught points survive container
+updates. The app reads a station's file at every move, so a changed station applies at once. A
+**new** station shows up in the `pick_up` and `release_at` dropdowns after a restart, which the app
+then does by itself (after the current move, if one is running). Every file that is replaced is
+kept in `control-points/.history/`.
+
+Three ways to set a station's points from Arkitekt. None of them moves the arm:
+
+- **`teach_point(station, point)`**: guide the arm to a pose (by hand in manual mode, or with the
+  teach pendant), then call it with the point's name, e.g. `home`, then `move1`, `move2` … A
+  point of the same name is replaced where it is; a new one goes last, and the arm drives the
+  points in file order. For the pose `home_robot` drives to, use station `home_robot`, point
+  `home`. Call `init_robot_and_gripper` afterwards to switch the arm back to automatic mode.
+- **`import_teach_points(station, names)`**: name the poses in the Fairino teach interface, then
+  copy them from the controller in the order given (what `get_points.py` did).
+- **`upload_points(station, points)`**: paste coordinates as JSON, e.g. from `export_points`
+  after editing, or from another installation:
+
+  ```json
+  {"home":  [x, y, z, rx, ry, rz, j1, j2, j3, j4, j5, j6, tool, user, 100, 100, 0, 0, 0, 0],
+   "move1": [...]}
+  ```
+
+  A point needs at least 14 numbers: the tool pose, the joint angles in degrees, the tool and
+  the work-object number. The controller's teach points add speed, acceleration and the external
+  axes, which the app does not use. `merge` keeps the station's other points.
+
+The same from a shell, without Arkitekt:
 
 ```bash
 uv run teach.py control-points/my_station.json home move1 move2 move3
+docker exec -it <container> python teach.py /config/control-points/my_station.json home move1 …
 ```
-
-On the Pi: `docker exec -it <container> python teach.py /config/control-points/my_station.json home move1 …`
-This only reads from the controller; it does not enable or move the arm.
 
 ## Running locally (uv)
 
@@ -133,7 +167,7 @@ The vendored [Fairino Python SDK](https://fair-documentation.readthedocs.io/en/l
 fairinogale/
 ├── app.py                 # the Arkitekt app: actions, stations, robot connection
 ├── arkitekt_bind.py       # binding page and connection (same file in OT2windy_service)
-├── teach.py               # read teach points from the controller into a station file
+├── teach.py               # read teach points from the controller into a station file (shell)
 ├── config.example.yaml    # copied to config.yaml on the first start
 ├── control-points/        # teach-point files (jena/: the Jena installation)
 ├── mock/MockRPC.py        # stand-in for the SDK when robot.mock is set
