@@ -1,6 +1,7 @@
 """Bind a device app to an Arkitekt server from a small web page.
 
-The same file lives in every device repo (fairinogale, OT2windy_service). Keep the copies identical.
+The same file lives in fairinogale, OT2windy_service and stainstorm_orchestrator_jena. Keep the
+copies identical.
 
     from arkitekt_bind import serve
     serve(app, "config.yaml")  # blocks
@@ -107,9 +108,9 @@ class Binder:
             self.session.update(changes)
 
     def stored_login(self) -> Path:
-        from arkitekt.app.fakts import _cache_path
+        from arkitekt.app.sessions import session_path
 
-        return Path(_cache_path(self.app, self.settings["url"]))
+        return Path(session_path(self.app.identifier, self.app.version, self.settings["url"]))
 
     def status(self) -> dict:
         with self._lock:
