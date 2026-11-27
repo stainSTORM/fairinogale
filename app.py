@@ -80,7 +80,7 @@ def station_names() -> list[str]:
 STATIONS = station_names()  # at start; the trajectories state follows the folder
 
 # 2.0.0: the trajectories state, stations offered from it, and the vision actions.
-app = App(cfg.get("app", "fairinogale"), "2.0.0", effects=Effects.IRREVERSIBLE)
+app = App(cfg.get("app", "arkirino"), "2.0.0", effects=Effects.IRREVERSIBLE)
 
 
 @app.state(name="trajectories")  # the key the protocol app's arm demand asks for

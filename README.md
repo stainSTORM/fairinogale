@@ -29,7 +29,8 @@ It runs as a container on the openUC2 OS Raspberry Pi image (see
 file name (for example `Box1_A1`); stations without `{sample}` ignore it. The speeds default to the
 values in `config.yaml`.
 
-The live state `trajectories` is what the workflow's arm demand reads: `available_trajectories`
+It registers as `arkirino` (`app:` in `config.yaml`), the name the workflow's arm demand and the
+simulated arm in helsinki_fake_lab share. The live state `trajectories` is what that demand reads: `available_trajectories`
 (the stations), `current_position` (the station driven to last, or `home`) and `gripping`.
 
 - Every action except `export_points` holds one `robot` lock, so calls run one at a time.

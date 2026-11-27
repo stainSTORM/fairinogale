@@ -1,7 +1,7 @@
 # Fairino arm: Arkitekt app settings. On the Pi this file is /home/pi/arkitekt/fairino/config.yaml
 # and the binding page (http://<pi>/fairino/) edits it. Saving there restarts the app.
 
-app: fairinogale          # Arkitekt app identifier; the protocol app's arm demand names it
+app: arkirino             # Arkitekt app identifier: the workflow's arm demand and the simulated arm use it
 
 robot:
   ip: 192.168.178.200     # the arm's controller (fairinogale's setup used 192.168.5.1)
