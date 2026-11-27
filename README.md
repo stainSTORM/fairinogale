@@ -19,6 +19,7 @@ It runs as a container on the openUC2 OS Raspberry Pi image (see
 | `init_robot_and_gripper` | | Enables the arm in automatic mode (also after teaching in manual mode), activates the gripper |
 | `open_grip`, `close_grip` | | |
 | `home_robot` | `speed`, `acceleration` | Straight to the home pose (shortest joint path: clear the way first) |
+| `teach_station` | `station`, `points`, `sample` | Guided from Orkestrator: asks for one point after the other, records each where you guided the arm, and saves the camera reference at the look point. Does not move the arm |
 | `teach_point` | `station`, `point`, `sample` | Stores where the arm is now as a named point of the station. Does not move the arm |
 | `import_teach_points` | `station`, `names`, `sample`, `merge` | Copies points saved by name on the controller into the station. Does not move the arm |
 | `upload_points` | `station`, `points` (JSON), `sample`, `merge` | Stores pasted coordinates for the station |
@@ -108,8 +109,15 @@ updates. The app reads a station's file at every move, so a changed station appl
 into the folder by hand within 5 s: no restart. Every file that is replaced is kept in
 `control-points/.history/`.
 
-Three ways to set a station's points from Arkitekt. None of them moves the arm:
+Four ways to set a station's points from Arkitekt. None of them moves the arm:
 
+- **`teach_station(station)`**, the guided way: Orkestrator asks for each of the station's points
+  in turn (or the ones in `points`; for a new station, name them in driving order). Guide the arm
+  there with the teach pendant or by hand and approve: the point is recorded where the arm stands.
+  At the look point of a station with a vision block the camera's view is saved as the reference
+  too, and the task's panel shows it; the question comes again until the station's tags are in
+  view. Deny to finish early (what was recorded is saved), cancel to keep the station as it was.
+  It refuses to run in auto-mode, where nobody would guide the arm.
 - **`teach_point(station, point)`**: guide the arm to a pose (by hand in manual mode, or with the
   teach pendant), then call it with the point's name, e.g. `home`, then `move1`, `move2` … A
   point of the same name is replaced where it is; a new one goes last, and the arm drives the

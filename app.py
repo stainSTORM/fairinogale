@@ -12,9 +12,11 @@ teach-point file; config.yaml lists them, with the robot's IP and the speeds. Tw
   closes, separately for pick and release.
 
 Every JSON file in the points folder is a station too, driven as a round trip unless config.yaml
-says otherwise. upload_points, teach_point and import_teach_points write those files, so a station
-can be taught or replaced while the app runs. The folder sits next to config.yaml (on the Pi a bind
-mount), and a replaced file is kept in its .history/ folder.
+says otherwise. teach_station, teach_point, import_teach_points and upload_points write those files,
+so a station can be taught or replaced while the app runs. The folder sits next to config.yaml (on
+the Pi a bind mount), and a replaced file is kept in its .history/ folder. teach_station is the
+guided way, from Orkestrator: it asks for one point after the other and saves the camera's
+reference at the look point.
 
 A station with a vision block is looked at before the arm goes in: a camera on the gripper sees the
 station's AprilTags from one of the teach points, and the points behind it are shifted by what the
@@ -44,7 +46,7 @@ from typing import Annotated
 import koil
 import numpy as np
 import yaml
-from arkitekt import App, Description, Effects, Task
+from arkitekt import ActionBlok, App, AssignPrompt, Description, Effects, Task
 from arkitekt.widgets import ParagraphWidget, withStateChoices
 
 import vision
@@ -85,11 +87,16 @@ app = App(cfg.get("app", "arkirino"), "2.0.0", effects=Effects.IRREVERSIBLE)
 
 @app.state(name="trajectories")  # the key the protocol app's arm demand asks for
 class TrajectoryState:
-    """The stations the arm can drive to, where it went last and whether it holds a slide."""
+    """The stations the arm can drive to, where it went last and whether it holds a slide; and
+    what teach_station's panel shows."""
 
     available_trajectories: list[str] = field(default_factory=list)
     current_position: str = "home"
     gripping: bool = False
+    teaching: str = ""  # the station teach_station records, "" when none
+    teach_places: list[str] = field(default_factory=list)  # its points recorded so far
+    # ponytail: a JPEG data URL in the state; move it to mikro if Orkestrator refuses data URLs
+    teach_image: str = ""  # the camera's view from the last look point
 
 
 @app.startup
@@ -774,21 +781,139 @@ def teach_point(state: TrajectoryState, station: AnyStation,
     last (the arm drives the points in file order). Reads the arm, does not move it. For the
     pose home_robot drives to, use station home_robot and point home.
     """
-    rpc = connection()
-    pose = value(rpc.GetActualTCPPose(), "reading the tool pose")
-    joints = value(rpc.GetActualJointPosDegree(), "reading the joint angles")
-    tool = value(rpc.GetActualTCPNum(), "reading the tool number")
-    user = value(rpc.GetActualWObjNum(), "reading the work-object number")
-    # the layout of the controller's own teach points: pose, joints, tool, user, vel, acc, ext axes
-    values = [float(v) for v in [*pose, *joints, tool, user, 100, 100, 0, 0, 0, 0]]
     try:
         points = read_points(station, sample)
     except FileNotFoundError:
         points = {}
-    points[point] = values
+    points[point] = current_point(connection())
     message = write_points(station, sample, points)
     state.available_trajectories = station_names()
     return message
+
+
+def current_point(rpc) -> list[float]:
+    """Where the arm stands, in the layout of the controller's own teach points: pose, joints,
+    tool, user, vel, acc, ext axes. Reads the arm, leaves its mode alone."""
+    pose = value(rpc.GetActualTCPPose(), "reading the tool pose")
+    joints = value(rpc.GetActualJointPosDegree(), "reading the joint angles")
+    tool = value(rpc.GetActualTCPNum(), "reading the tool number")
+    user = value(rpc.GetActualWObjNum(), "reading the work-object number")
+    return [float(v) for v in [*pose, *joints, tool, user, 100, 100, 0, 0, 0, 0]]
+
+
+def ask(task, title: str, text: str) -> bool:
+    """A person's approval in Orkestrator. Auto-mode approves by itself: that must not teach."""
+    decision = task.hold(title, prompt=AssignPrompt(title=title, description=text))
+    if decision.auto:
+        raise RuntimeError("Teaching needs a person at the arm: start Teach Station from "
+                           "Orkestrator, not in auto-mode")
+    return decision.approved
+
+
+def record_point(task, state: TrajectoryState, station: str, name: str, step: str, vis: dict,
+                 look: bool) -> tuple[list[float], object] | None:
+    """Where the arm stands once the person approves, and at a look point the camera's image,
+    asked for again until the station's tags are in it. None: the person denied."""
+    title = f"{station}: guide the arm to {name} ({step})"
+    text = ("Move it there with the teach pendant or by hand, then approve to record where it "
+            "stands. Deny to finish: the points recorded so far are saved.")
+    if look:
+        text += (" This is the look point: the camera's view is saved as the station's reference, "
+                 "so put one carrier on the seat.")
+    while ask(task, title, text):
+        point = current_point(connection())
+        if not look:
+            return point, None
+        cam = camera(vis["camera"])
+        image = cam.grab()  # a camera that gives no image fails the teaching
+        state.teach_image = vision.data_url(vision.annotate(image, vision.detect(image)), 640)
+        try:
+            vision.make_reference(cam, image, vis.get("tags"), vis.get("carrier_tags", ()))
+            return point, image
+        except RuntimeError as e:
+            title = f"{station}: the camera's view from {name}"
+            text = (f"{e}. Fix that (the panel shows the view), then approve to record {name} "
+                    f"again. Deny to finish: {name} keeps its pose and reference.")
+    return None
+
+
+#: Teach Station's task panel: the question it waits on, the points so far, the camera's view.
+TEACH_PANEL = """
+<Blok kind="action" context="panel" chrome="none">
+  <div className="flex flex-col gap-3">
+    <div className="flex items-center justify-between gap-2">
+      <p className="text-base font-semibold tracking-tight">Teaching {args.station}</p>
+      <Badge variant="outline">{task.status}</Badge>
+    </div>
+    <ask />
+    <if when={task.failed}>
+      <Alert variant="destructive" icon="alert-triangle" title="The teaching failed">{task.error}</Alert>
+    </if>
+    <div className="rounded-xl border bg-card p-3">
+      <p className="mb-2 text-sm font-medium">Recorded</p>
+      <foreach items={self.trajectories.teach_places} let="place" key={place}>
+        <div className="flex items-center gap-2 text-sm"><Icon name="check" size={12} />{place}</div>
+      </foreach>
+    </div>
+    <if when={!(self.trajectories.teach_image == "")}>
+      <div className="rounded-xl border bg-card p-3">
+        <p className="mb-2 text-sm font-medium">The camera from the look point</p>
+        <Image src={self.trajectories.teach_image} alt="The camera's view from the look point" width="100%" radius="0.5rem" />
+        <p className="mt-1 text-xs text-muted-foreground">Green: the tags it found.</p>
+      </div>
+    </if>
+  </div>
+</Blok>
+"""
+
+
+@app.action(locks=["robot"], effects=Effects.REPEATABLE, bloks=[ActionBlok(
+    TEACH_PANEL, description="The question it waits on, the points recorded so far and what "
+                             "the camera saw from the look point.")])
+def teach_station(state: TrajectoryState, station: AnyStation,
+                  points: Annotated[list[str] | None, Description(
+                      "The points to record, in driving order, e.g. home, move1, move2. Empty: "
+                      "all of the station's points, under their names")] = None,
+                  sample: Sample = "", *, task: Task) -> str:
+    """Teach Station
+
+    Records a station's points one after the other: for each, guide the arm there with the teach
+    pendant or by hand, then approve in Orkestrator. At the station's look point (vision.look in
+    config.yaml) the camera's view is checked and saved as the reference, so that the arm can
+    correct for the station moving. Deny to finish early: what was recorded is saved, the other
+    points keep their poses. Cancel to keep the station as it was. Never moves the arm.
+    """
+    st, file = station_file(station, sample)
+    try:
+        names = list(points or read_points(station, sample))
+    except FileNotFoundError:
+        raise ValueError(f"{station!r} has no points yet: name them, in driving order") from None
+    vis = st.get("vision") or {}
+    looks = look_points(st) if vis else []
+    recorded, images = {}, {}
+    state.teaching, state.teach_places, state.teach_image = station, [], ""
+    try:
+        with moving():  # nothing else drives the arm while a person guides it
+            for i, name in enumerate(names):
+                got = record_point(task, state, station, name, f"{i + 1} of {len(names)}", vis,
+                                   name in looks)
+                if got is None:
+                    break
+                recorded[name] = got[0]
+                if got[1] is not None:
+                    images[name] = got[1]
+                state.teach_places = [*state.teach_places, name]
+                task.progress(int(100 * (i + 1) / len(names)), name)
+    finally:
+        state.teaching = ""
+    if not recorded:
+        return f"Nothing recorded: {station!r} is as it was"
+    message = write_points(station, sample, recorded, merge=True)
+    for look, image in images.items():  # after the points: a reference belongs to its look pose
+        vision.save_reference(file, look, camera(vis["camera"]), image, vis.get("tags"),
+                              vis.get("carrier_tags", ()))
+    state.available_trajectories = station_names()
+    return message + (f", and the camera reference of {', '.join(images)}" if images else "")
 
 
 def teach_points(rpc, names: list[str]) -> dict:
