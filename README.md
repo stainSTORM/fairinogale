@@ -1,8 +1,9 @@
 # fairinogale
 
 **The Fairino robot arm as an [Arkitekt](https://arkitekt.live) app.** It moves slides between the
-stations of the staining workflow (pickup station, Opentrons, microscope), so that a workflow such
-as [protocolapp](https://github.com/stainSTORM/protocolapp) can call it.
+stations of the staining workflow (pickup station, Opentrons, microscope), so that the stainSTORM
+workflow (`process_slides` in [helsinki_fake_lab](https://github.com/stainSTORM/helsinki_fake_lab))
+can call it. It is built on Arkitekt 19 (the family is pinned in `pyproject.toml`).
 
 It runs as a container on the openUC2 OS Raspberry Pi image (see
 [Raspberry Pi](#raspberry-pi)), or with `uv` on any computer that can reach the arm.
@@ -11,8 +12,10 @@ It runs as a container on the openUC2 OS Raspberry Pi image (see
 
 | Action | Arguments | What it does |
 |---|---|---|
-| `pick_up` | `station`, `sample`, `speed`, `acceleration`, `danger_speed` | Drives to the station, grips the slide, comes back |
+| `pick_up` | `station`, `sample`, `speed`, `acceleration`, `danger_speed`, `correct` | Drives to the station, grips the slide, comes back |
 | `release_at` | same | Drives to the station, puts the slide down, comes back |
+| `check_station` | `station`, `sample`, speeds | Drives to the station's look point, compares its tags with the saved reference, comes back; returns a `StationCheck` |
+| `save_station_reference` | same | Drives to the look point and saves the view as the station's reference |
 | `init_robot_and_gripper` | | Enables the arm in automatic mode (also after teaching in manual mode), activates the gripper |
 | `open_grip`, `close_grip` | | |
 | `home_robot` | `speed`, `acceleration` | Straight to the home pose (shortest joint path: clear the way first) |
@@ -26,10 +29,36 @@ It runs as a container on the openUC2 OS Raspberry Pi image (see
 file name (for example `Box1_A1`); stations without `{sample}` ignore it. The speeds default to the
 values in `config.yaml`.
 
+The live state `trajectories` is what the workflow's arm demand reads: `available_trajectories`
+(the stations), `current_position` (the station driven to last, or `home`) and `gripping`.
+
 - Every action except `export_points` holds one `robot` lock, so calls run one at a time.
 - A move the controller rejects (non-zero error code) stops the sequence and fails the action.
   The old code printed the error and carried on.
 - Cancelling the task in Arkitekt stops the arm at the next teach point.
+- After every gripper move the app reads the jaw position back from the controller and logs it.
+  With `gripper.holding: [min, max]` in `config.yaml`, a pick fails when the jaws do not stop inside
+  that range (they closed on air, or the carrier was lost on the way back). A gripper fault fails
+  the action in any case.
+
+## Vision
+
+A station can carry AprilTags that a camera on the gripper looks at before the arm goes in. The arm
+then shifts the station's points by what the station moved since teaching, or backs out when it
+moved too far, its tags are hidden or the seat is not as expected. `correct: false` in a call
+drives the taught points.
+
+[docs/vision.md](docs/vision.md) has the instructions: printing and placing the tags
+([tags/](tags)), mounting the camera, teaching, the page at port 8093 and `debug.py`, which runs
+all of it from a terminal without Arkitekt. To try it without hardware:
+
+```bash
+FAIRINO_CONFIG=mock/cell.yaml uv run debug.py look opentrons --save --yes
+FAIRINO_CONFIG=mock/cell.yaml uv run app.py     # http://localhost:8093/
+uv run pytest                                   # the maths and the driving, against the mock
+```
+
+This is a first draft: it has run against the mock arm and a simulated camera only.
 
 ## Configuration
 
@@ -74,9 +103,9 @@ bench, so re-teach them for yours before driving the arm.
 `control-points/` sits next to `config.yaml`: on the Pi that is
 `/home/pi/arkitekt/fairino/control-points/`, a bind mount, so taught points survive container
 updates. The app reads a station's file at every move, so a changed station applies at once. A
-**new** station shows up in the `pick_up` and `release_at` dropdowns after a restart, which the app
-then does by itself (after the current move, if one is running). Every file that is replaced is
-kept in `control-points/.history/`.
+**new** station is offered in the `pick_up` and `release_at` dropdowns at once, and a file put
+into the folder by hand within 5 s: no restart. Every file that is replaced is kept in
+`control-points/.history/`.
 
 Three ways to set a station's points from Arkitekt. None of them moves the arm:
 
@@ -126,13 +155,15 @@ The page on port 8080 (on the Pi: `http://<pi>/fairino/`):
 2. The page shows a code and an approval link. Open the link in any browser, sign in and check that
    the code matches.
 3. The app registers its actions and stays connected. The login is stored in `.state/` next to
-   `config.yaml`, so the app reconnects by itself after a restart.
+   `config.yaml`, so the app reconnects by itself after a restart. It is stored per app version:
+   after an update to a new version (now 2.0.0), bind once more.
 
 **Disconnect** keeps the stored login; **Unbind** forgets it. Tick *allow plain http* for a server
 without TLS (e.g. a NAS); the session token then travels unencrypted. The page also edits
 `config.yaml`: **Save and restart** checks the YAML, writes it and restarts the app.
 
-`arkitekt_bind.py` is the same file in fairinogale and OT2windy_service. Keep the copies identical.
+`arkitekt_bind.py` is the same file in fairinogale, OT2windy_service and
+stainstorm_orchestrator_jena. Keep the copies identical.
 
 ## Docker
 
@@ -147,13 +178,13 @@ the branch name.
 
 ## Raspberry Pi
 
-The Arkitekt robot pallet (branch
-[`arkitekt-service` of openUC2/os-rpi](https://github.com/openUC2/os-rpi/tree/arkitekt-service))
-deploys this container as `fairino`, switched on, in its `os-rpi-arkitekt` SD card image. The
-microscope pallet on `edge` does not have it. The page is linked from the machine's home page.
+The stainSTORM robot pallet ([stainSTORM/os-rpi](https://github.com/stainSTORM/os-rpi), branch
+`edge`) deploys this container as `fairino`, switched on, in its SD card image. The page is linked
+from the machine's home page.
 
-On the Pi, the config and teach points live in `/home/pi/arkitekt/fairino/`. To ship a new version,
-push here, then set the new `sha-<commit>` tag in that branch's `deployments/fairino.pkg/deployment.compose.yml`.
+On the Pi, the config and teach points live in `/home/pi/arkitekt/fairino/`. To ship a new
+version, push here, then set the new `sha-<commit>@sha256:<digest>` in os-rpi's
+`deployments/fairino.pkg/deployment.compose.yml`.
 
 ## fairino-python-sdk
 
@@ -165,12 +196,18 @@ The vendored [Fairino Python SDK](https://fair-documentation.readthedocs.io/en/l
 
 ```
 fairinogale/
-├── app.py                 # the Arkitekt app: actions, stations, robot connection
+├── app.py                 # the Arkitekt app: actions, stations, robot connection, driving
+├── vision.py              # AprilTags: a station's move since teaching (no robot, no Arkitekt)
+├── vision_ui.py           # the vision page: live image, measurement, save reference
+├── debug.py               # the same functions from a terminal, without Arkitekt
+├── tags.py                # makes the printable tag sheets in tags/
 ├── arkitekt_bind.py       # binding page and connection (same file in OT2windy_service)
 ├── teach.py               # read teach points from the controller into a station file (shell)
 ├── config.example.yaml    # copied to config.yaml on the first start
 ├── control-points/        # teach-point files (jena/: the Jena installation)
-├── mock/MockRPC.py        # stand-in for the SDK when robot.mock is set
+├── docs/vision.md         # instructions for the tags, the camera and teaching
+├── mock/                  # MockRPC.py and MockCamera.py stand in for arm and camera; cell.yaml
+├── tests/                 # uv run pytest
 ├── testing/               # older standalone test scripts
 └── fairino-python-sdk/    # vendored Fairino SDK
 ```

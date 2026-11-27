@@ -1,0 +1,62 @@
+# No hardware: a mock arm and a camera that draws the stations' tags (mock/MockCamera.py).
+#
+#   FAIRINO_CONFIG=mock/cell.yaml uv run debug.py look opentrons --save --yes
+#   FAIRINO_CONFIG=mock/cell.yaml uv run app.py        -> http://localhost:8093/
+#   (PowerShell:  $env:FAIRINO_CONFIG = "mock/cell.yaml"; uv run app.py)
+#
+# The teach points are copied to mock/points/ on the first start; references are saved there.
+# Set mock_shift after saving the references and start again: the stations have then "moved".
+# config.example.yaml explains every key.
+
+app: fairinogale-mock
+
+robot:
+  ip: 127.0.0.1
+  mock: true
+
+gripper:
+  open: 50
+  close: 90
+  initial: 90
+
+speed: 20
+acceleration: 70
+danger_speed: 10
+
+points_dir: points
+home_file: home_robot.json
+
+vision:
+  tag_size_mm: 30
+  carrier_tag_size_mm: 15
+  port: 8093
+  allow_motion: true
+  cameras:
+    wrist:
+      source: mock
+      fov_deg: 70
+      mount: [0, -60, -80, -15, 0, 0]
+      # mock_shift: [2, -1, 1]      # mm, mm, deg
+
+stations:
+  opentrons:
+    file: jena/opentrons.json
+    out_and_back: true
+    pick: {linear: [move7, move8, move9], open: [move6], close: [move9]}
+    release: {linear: [move7, move8], open: [move8]}
+    vision:
+      camera: wrist
+      look: move6
+      tags: [10, 11]
+      carrier_tags: [100, 101, 102]
+      correct: [move7, move8, move9]
+  pickupstation:
+    file: jena/pickupstation.json
+    out_and_back: true
+    pick: {linear: [move6, move7], open: [move5], close: [move7]}
+    release: {linear: [move6, move7], open: [move7]}
+    vision:
+      camera: wrist
+      look: move5
+      tags: [0, 1]
+      correct: [move6, move7]

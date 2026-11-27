@@ -10,12 +10,13 @@ COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 # Only the Linux SDK module is needed; it is pure Python.
 COPY fairino-python-sdk/linux/fairino/Robot.py sdk/
-COPY app.py arkitekt_bind.py teach.py config.example.yaml ./
+COPY app.py arkitekt_bind.py teach.py vision.py vision_ui.py debug.py tags.py config.example.yaml ./
 COPY mock mock
 COPY control-points control-points
 # config.yaml, the teach points and the stored login (.state/) live in /config.
 ENV FAIRINO_SDK_DIR=/app/sdk FAIRINO_CONFIG=/config/config.yaml
 RUN useradd -u 1000 -m app && mkdir /config && chown app /config
 USER app
-EXPOSE 8080
+# 8080: the binding page (PORT). 8093: the vision page (vision.port in config.yaml).
+EXPOSE 8080 8093
 CMD ["python", "app.py"]

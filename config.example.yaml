@@ -14,6 +14,10 @@ gripper:
   company: 6              # SetGripperConfig: gripper vendor and device
   device: 0
   jaw: 1
+  # Jaw position (%) the controller reports when the jaws hold a carrier, as [min, max]. A pick
+  # whose jaws end up outside fails ("no carrier in the gripper"). Without it the position is only
+  # logged: pick a few times with and without a carrier, read the log, then set the range.
+  # holding: [80, 88]
 
 # Defaults for pick_up / release_at; a call can override them.
 speed: 20                 # % joint speed outside danger zones
@@ -23,6 +27,28 @@ danger_speed: 10          # % at danger, linear and gripper points
 # Teach-point files, relative to this file. Record new ones with teach.py.
 points_dir: control-points
 home_file: home_robot.json
+
+# Machine vision (docs/vision.md): a camera on the gripper looks at AprilTags on the stations and
+# the arm shifts its points by what a station moved since teaching. Without this block, and
+# without a vision block in a station, the arm drives the taught points as before.
+# vision:
+#   tag_size_mm: 30         # edge of the black square of the station tags (tags/, 36h11)
+#   carrier_tag_size_mm: 15 # ... and of the carrier tags
+#   port: 8093              # the vision page: live image, measurement, save reference
+#   allow_motion: false     # true: the page may drive the arm to a look point and back
+#   cameras:
+#     wrist:
+#       source: 0           # camera index; or a JPEG URL (the webcam container:
+#                           # http://localhost/webcam/snapshot); or "mock" with robot.mock
+#       width: 1280
+#       height: 720
+#       fov_deg: 70         # horizontal field of view; replace by a calibration when there is one:
+#       # matrix: [fx, fy, cx, cy]
+#       # dist: [k1, k2, p1, p2, k3]
+#       # The camera in the tool frame of the look points [x, y, z, rx, ry, rz] (mm, deg; the
+#       # camera looks along its z, x is right in the image). "debug.py mount" measures the angles.
+#       mount: [0, -60, -80, -15, 0, 0]
+#       # mock_shift: [2, -1, 1]   # mock camera only: the stations moved by mm, mm, deg
 
 # A station is one teach-point file. The files below come from two installations:
 # re-teach the ones for yours before driving the arm.
@@ -39,6 +65,19 @@ stations:
     out_and_back: true
     pick: {linear: [move7, move8, move9], open: [move6], close: [move9]}
     release: {linear: [move7, move8], open: [move8]}
+    # vision:
+    #   camera: wrist
+    #   look: move6                     # the camera sees the station's tags from this teach point
+    #   tags: [10, 11]                  # the tags fixed to the station
+    #   correct: [move7, move8, move9]  # points that move with the station; driven linearly
+    #   max_shift_mm: 5                 # further off: the arm backs out and the action fails
+    #   max_yaw_deg: 3
+    #   deadband_mm: 0.3                # nearer than this: taught points, no correction
+    #   on_no_tag: fail                 # or "uncorrected": drive the taught points
+    #   carrier_tags: [100, 101, 102]   # tags on carriers: a pick needs one on the seat, a
+    #   max_seat_mm: 1.5                # release a free seat
+    #   check_after: false              # true: look again on the way back (the tags must stay in
+    #                                   # view with a carrier in the gripper)
   pickupstation:
     file: jena/pickupstation.json
     out_and_back: true

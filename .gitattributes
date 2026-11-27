@@ -1,0 +1,2 @@
+# The tag sheets are plain-text PDFs with byte offsets inside: never convert their line ends.
+*.pdf binary
