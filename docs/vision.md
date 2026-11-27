@@ -165,6 +165,9 @@ More keys, with their defaults:
 Do this once per station, right after its points are taught (or checked), with the station where
 it belongs and one carrier on its seat.
 
+**From Orkestrator, with the points:** `teach_station` saves the reference when you record the
+look point. Its panel shows the camera's view, and it asks again until the station's tags are in it.
+
 **With the page** (`http://<host>:8093/`): choose the station, bring the arm to the look point
 (the **Drive to the look point** button with `vision.allow_motion: true`, or the pendant), check
 that both station tags are outlined in green, press **Save reference**. The page refuses when the

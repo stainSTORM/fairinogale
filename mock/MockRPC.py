@@ -151,8 +151,8 @@ class MockRPC:
         return 0, list(self.joint_positions)
 
     def GetActualTCPPose(self, flag: int = 1) -> Tuple[int, List[float]]:
-        """A made-up tool pose: x, y, z in mm, rx, ry, rz in degrees"""
-        return 0, [100.0, 200.0, 300.0, 180.0, 0.0, 90.0]
+        """Where the last move went: x, y, z in mm, rx, ry, rz in degrees"""
+        return 0, list(self.tcp_pose)
 
     def GetActualTCPNum(self, flag: int = 1) -> Tuple[int, int]:
         return 0, self.current_tool

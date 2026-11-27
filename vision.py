@@ -14,6 +14,7 @@ This module knows nothing about the robot or Arkitekt: app.py drives, debug.py a
 show what the camera sees.
 """
 
+import base64
 import json
 import threading
 import time
@@ -297,9 +298,9 @@ def load_references(points_file: Path) -> dict:
     return json.loads(file.read_text()) if file.exists() else {}
 
 
-def save_reference(points_file: Path, look: str, camera: Camera, image: np.ndarray,
-                   station_tags=None, carrier_tags=()) -> dict:
-    """Saves the tags in an image as the reference of a look point, with the image beside it."""
+def make_reference(camera: Camera, image: np.ndarray, station_tags=None, carrier_tags=()) -> dict:
+    """The tags in an image as a look point's reference. Raises when the station's tags are not
+    all in view, or more than one carrier tag is."""
     found = detect(image)
     tags = {i: c for i, c in found.items() if (i in station_tags if station_tags else
                                                 i not in carrier_tags)}
@@ -311,16 +312,31 @@ def save_reference(points_file: Path, look: str, camera: Camera, image: np.ndarr
     if len(carriers) > 1:
         raise RuntimeError(f"More than one carrier tag in view ({carriers}): leave one carrier, on "
                            f"this station's seat")
-    reference = {"camera": camera.name, "size": [image.shape[1], image.shape[0]],
-                 "saved": time.strftime("%Y-%m-%d %H:%M:%S"),
-                 "tags": {str(i): np.round(c, 2).tolist() for i, c in sorted(tags.items())},
-                 "carrier": np.round(found[carriers[0]], 2).tolist() if carriers else None}
+    return {"camera": camera.name, "size": [image.shape[1], image.shape[0]],
+            "saved": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "tags": {str(i): np.round(c, 2).tolist() for i, c in sorted(tags.items())},
+            "carrier": np.round(found[carriers[0]], 2).tolist() if carriers else None}
+
+
+def save_reference(points_file: Path, look: str, camera: Camera, image: np.ndarray,
+                   station_tags=None, carrier_tags=()) -> dict:
+    """Saves the tags in an image as the reference of a look point, with the image beside it."""
+    reference = make_reference(camera, image, station_tags, carrier_tags)
     file = reference_file(points_file)
     references = load_references(points_file)
     references[look] = reference
     file.write_text(json.dumps(references, indent=1))
     cv2.imwrite(str(file.with_suffix(f".{look}.jpg")), image)
     return reference
+
+
+def data_url(image: np.ndarray, width: int | None = None) -> str:
+    """The image as a JPEG data URL, for a web page or an Arkitekt blok; shrunk to width."""
+    if width and image.shape[1] > width:
+        height = round(image.shape[0] * width / image.shape[1])
+        image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+    jpeg = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 75])[1]
+    return "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
 
 
 def annotate(image: np.ndarray, now: dict, reference: dict | None = None) -> np.ndarray:

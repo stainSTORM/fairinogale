@@ -14,13 +14,10 @@ app.py starts it and passes itself in (start(port, app_module)), so this file im
 app.py nor Arkitekt.
 """
 
-import base64
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
-
-import cv2
 
 import vision
 
@@ -141,10 +138,8 @@ def start(port: int, api) -> None:
 
     def look(args: dict) -> dict:
         seen = api.observe(args["station"], args.get("sample", ""), args.get("look") or None)
-        picture = vision.annotate(seen["image"], seen["now"], seen["reference"])
-        jpeg = cv2.imencode(".jpg", picture, [cv2.IMWRITE_JPEG_QUALITY, 80])[1]
         m = seen["measurement"]
-        return {"image": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(),
+        return {"image": vision.data_url(vision.annotate(seen["image"], seen["now"], seen["reference"])),
                 "tags": sorted(seen["now"]), "error": str(seen["error"]) if seen["error"] else None,
                 "apply": seen["apply"], "travel_mm": seen["travel_mm"], "on_seat": seen["on_seat"],
                 "saved": (seen["reference"] or {}).get("saved"),
